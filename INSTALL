@@ -1,0 +1,63 @@
+FAKESTON is used to replay weston evdev captures
+/mouse click, keys, touch, axis, etc./ to weston's evdev.c
+
+SETUP / USEAGE
+
+   ./build.sh
+   ./fakeston_run    fakeston_test_file
+
+EXAMPLE USEAGE
+
+   ./fakeston_run   ./emudumps/hw_test3/ftestcase1562749452.txt
+
+You can now see the compositor notify() called. they are
+produced from replaying all the evemu captures /in parallel/
+via evdev.c exactly as if you were running a weston compositor.
+
+MAKE CAPTURES WITH WESTON
+
+1. apply patch/ to weston:
+
+   git am ../fakeston/patch/0001-Hacked-weston.patch
+
+2. build weston (as usual)
+3. create captures with weston
+4. captures appear in /tmp/
+
+FILES FROM UPSTREAM WESTON/WAYLAND
+
+compositor.h
+config-parser.h
+evdev.c
+evdev.h
+evdev-touchpad.c
+filter.c
+filter.h
+matrix.h
+pixman.h
+version.h
+wayland-private.h
+wayland-server-protocol.h
+wayland-util.c
+wayland-util.h
+
+CUSTOM FILES
+
+build.sh
+fakeston
+fakeston.c
+INSTALL
+
+FOLDERS
+
+doc/
+dumps/
+patch/
+
+FILES FROM EVEMU
+
+evemu.c
+evemu.h
+evemu-impl.h
+
+

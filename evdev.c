@@ -26,7 +26,9 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <mtdev.h>
+#include <errno.h>
 
+#include "evemu-impl.h"
 #include "compositor.h"
 #include "evdev.h"
 
@@ -223,7 +225,13 @@ evdev_process_absolute(struct evdev_device *device, struct input_event *e)
 		evdev_process_absolute_motion(device, e);
 	}
 }
-
+/*
+static int
+is_sync_report_event(struct input_event *event)
+{
+	return (event->type == EV_SYN) && (event->code == SYN_REPORT);
+}
+*/
 static int
 is_motion_event(struct input_event *e)
 {
@@ -357,19 +365,25 @@ fallback_dispatch_create(void)
 
 
 static FILE *evlog_stream = NULL;
+static unsigned int evlog_stream_cnt = 0;
 
 
-
-static void ioctl_dump_long(struct evdev_device *d, char *tag, unsigned long *map, size_t n)
+void ioctl_dump_char(struct evdev_device *d, char *tag, char *map, size_t nbytes)
 {
 	if (evlog_stream == NULL)
 		return;
-	fprintf(evlog_stream, "%p %s ", d, tag);
+	 
+	fprintf(evlog_stream, "IOCTLDUMP: %p %s %zu ", d, tag, nbytes);
 	size_t i;
-	for (i = 0; i < n; i++) {
-		fprintf(evlog_stream, "%lx", map[i]);
+	for (i = 0; i < nbytes; i++) {
+		fprintf(evlog_stream, "%02x ", (unsigned char)map[i]);
 	}
 	fprintf(evlog_stream, "\n");
+}
+
+void ioctl_dump_long(struct evdev_device *d, char *tag, unsigned long *map, size_t n)
+{
+	ioctl_dump_char(d, tag, (char *) map, n * sizeof(unsigned long));
 }
 
 static int
@@ -384,8 +398,8 @@ evdev_tx_sync(struct evdev_device *d, unsigned int time)
 	if (ret < 0)
 		return -1;
 
-	ioctl_dump_long(d,  "kernel_keys", kernel_keys, NBITS(KEY_CNT));
-	
+	ioctl_dump_long(d,  "evdev_keys", kernel_keys, NBITS(KEY_CNT));
+
 
 	return 0;
 }
@@ -416,7 +430,65 @@ struct evdev_dispatch_interface syn_drop_interface = {
 	syn_drop_destroy
 };
 
+static void write_prop(FILE * fp, const unsigned char *mask, int bytes)
+{
+	int i;
+	for (i = 0; i < bytes; i += 8)
+		fprintf(fp, "P: %02x %02x %02x %02x %02x %02x %02x %02x\n",
+			mask[i], mask[i + 1], mask[i + 2], mask[i + 3],
+			mask[i + 4], mask[i + 5], mask[i + 6], mask[i + 7]);
+}
 
+static void write_mask(FILE * fp, int index,
+		       const unsigned char *mask, int bytes)
+{
+	int i;
+	for (i = 0; i < bytes; i += 8)
+		fprintf(fp, "B: %02x %02x %02x %02x %02x %02x %02x %02x %02x\n",
+			index, mask[i], mask[i + 1], mask[i + 2], mask[i + 3],
+			mask[i + 4], mask[i + 5], mask[i + 6], mask[i + 7]);
+}
+
+static void write_abs(FILE *fp, int index, const struct input_absinfo *abs)
+{
+	fprintf(fp, "A: %02x %d %d %d %d\n", index,
+		abs->minimum, abs->maximum, abs->fuzz, abs->flat);
+}
+
+static int evemu_has_event(const struct evemu_device *dev, int type, int code)
+{
+	return (dev->mask[type][code >> 3] >> (code & 7)) & 1;
+}
+
+static int evemu_write(const struct evemu_device *dev, FILE *fp)
+{
+	int i;
+
+	fprintf(fp, "N: %s\n", dev->name);
+
+	fprintf(fp, "I: %04x %04x %04x %04x\n",
+		dev->id.bustype, dev->id.vendor,
+		dev->id.product, dev->id.version);
+
+	write_prop(fp, dev->prop, dev->pbytes);
+
+	for (i = 0; i < EV_CNT; i++)
+		write_mask(fp, i, dev->mask[i], dev->mbytes[i]);
+
+	for (i = 0; i < ABS_CNT; i++)
+		if (evemu_has_event(dev, EV_ABS, i))
+			write_abs(fp, i, &dev->abs[i]);
+
+	return 0;
+}
+
+
+static int evemu_write_event(FILE *fp, const struct input_event *ev)
+{
+	return fprintf(fp, "E: %lu.%06u %04x %04x %d\n",
+		       ev->time.tv_sec, (unsigned)ev->time.tv_usec,
+		       ev->type, ev->code, ev->value);
+}
 
 static void
 evdev_log_events(struct evdev_device *device,
@@ -424,12 +496,71 @@ evdev_log_events(struct evdev_device *device,
 {
 	struct input_event *e, *end;
 
+	if (device->dump.out == NULL)
+		return;
+
 	e = ev;
 	end = e + count;
 	for (e = ev; e < end; e++) {
-		fprintf(evlog_stream, "%p %22lu %6lu %5hu %5hu %10i\n", device, e->time.tv_sec, e->time.tv_usec, e->type, e->code, e->value);
+		evemu_write_event(device->dump.out, e);
 	}
 
+}
+
+static int evemu_syscall_ioctl(int fd, int type, void* code)
+{
+	int ret;
+	while (((ret = ioctl(fd, type, code)) == -1) && (errno == EINTR));
+	return ret;
+}
+
+static void copy_bits(unsigned char *mask, const unsigned long *bits, int bytes)
+{
+	int i;
+	for (i = 0; i < bytes; i++) {
+		int pos = 8 * (i % sizeof(long));
+		mask[i] = (bits[i / sizeof(long)] >> pos) & 0xff;
+	}
+}
+
+static int evemu_extract(struct evemu_device *dev, int fd)
+{
+	unsigned long bits[64];
+	int rc, i;
+
+	memset(dev, 0, sizeof(*dev));
+
+	rc = evemu_syscall_ioctl(fd, EVIOCGNAME(sizeof(dev->name)), dev->name);
+	if (rc < 0)
+		return rc;
+
+	rc = evemu_syscall_ioctl(fd, EVIOCGID, &dev->id);
+	if (rc < 0)
+		return rc;
+
+	rc = evemu_syscall_ioctl(fd, EVIOCGPROP(sizeof(bits)), bits);
+	if (rc >= 0) {
+		copy_bits(dev->prop, bits, rc);
+		dev->pbytes = rc;
+	}
+
+	for (i = 0; i < EV_CNT; i++) {
+		rc = evemu_syscall_ioctl(fd, EVIOCGBIT(i, sizeof(bits)), bits);
+		if (rc < 0)
+			continue;
+		copy_bits(dev->mask[i], bits, rc);
+		dev->mbytes[i] = rc;
+	}
+
+	for (i = 0; i < ABS_CNT; i++) {
+		if (!evemu_has_event(dev, EV_ABS, i))
+			continue;
+		rc = evemu_syscall_ioctl(fd, EVIOCGABS(i), &dev->abs[i]);
+		if (rc < 0)
+			return rc;
+	}
+
+	return 0;
 }
 
 static void
@@ -487,8 +618,16 @@ evdev_device_data(int fd, uint32_t mask, void *data)
 			return 1;
 		}
 
-		if (evlog_stream)
-			evdev_log_events(device, ev, len / sizeof ev[0]);
+		unsigned long ev_cnt = len / sizeof ev[0];
+
+		if (evlog_stream) {
+			fprintf(evlog_stream, "EnewBURST: %5u %lu.%06ld %p %lu \n",
+				device->dump.evlog_burstseq,
+				ev[0].time.tv_sec, ev[0].time.tv_usec, device, ev_cnt);
+			evdev_log_events(device, ev, ev_cnt);
+
+			device->dump.evlog_burstseq++;
+		}
 
 		evdev_process_events(device, ev, len / sizeof ev[0]);
 
@@ -496,6 +635,7 @@ evdev_device_data(int fd, uint32_t mask, void *data)
 
 	return 1;
 }
+
 
 static int
 evdev_handle_device(struct evdev_device *device)
@@ -522,12 +662,14 @@ evdev_handle_device(struct evdev_device *device)
 		ioctl_dump_long(device, "abs_bits", abs_bits, NBITS(ABS_MAX));
 		if (TEST_BIT(abs_bits, ABS_X)) {
 			ioctl(device->fd, EVIOCGABS(ABS_X), &absinfo);
+			ioctl_dump_char(device, "eviocgabs_abs_x", (char *)&absinfo, sizeof absinfo);
 			device->abs.min_x = absinfo.minimum;
 			device->abs.max_x = absinfo.maximum;
 			device->caps |= EVDEV_MOTION_ABS;
 		}
 		if (TEST_BIT(abs_bits, ABS_Y)) {
 			ioctl(device->fd, EVIOCGABS(ABS_Y), &absinfo);
+			ioctl_dump_char(device, "eviocgabs_abs_y", (char *)&absinfo, sizeof absinfo);
 			device->abs.min_y = absinfo.minimum;
 			device->abs.max_y = absinfo.maximum;
 			device->caps |= EVDEV_MOTION_ABS;
@@ -535,10 +677,12 @@ evdev_handle_device(struct evdev_device *device)
 		if (TEST_BIT(abs_bits, ABS_MT_SLOT)) {
 			ioctl(device->fd, EVIOCGABS(ABS_MT_POSITION_X),
 			      &absinfo);
+			ioctl_dump_char(device, "eviocgabs_abs_mt_pos_x", (char *)&absinfo, sizeof absinfo);
 			device->abs.min_x = absinfo.minimum;
 			device->abs.max_x = absinfo.maximum;
 			ioctl(device->fd, EVIOCGABS(ABS_MT_POSITION_Y),
 			      &absinfo);
+			ioctl_dump_char(device, "eviocgabs_abs_mt_pos_y", (char *)&absinfo, sizeof absinfo);
 			device->abs.min_y = absinfo.minimum;
 			device->abs.max_y = absinfo.maximum;
 			device->is_mt = 1;
@@ -621,21 +765,54 @@ evdev_configure_device(struct evdev_device *device)
 	return 0;
 }
 
+static void ininit_logging(struct evdev_device *device, int device_fd)
+{
+	if (evlog_stream == NULL) {
+		char fname[128] = {0};
+		unsigned int ftest_id = rand();
+		sprintf(fname, "/tmp/ftestcase%u.txt", ftest_id);
+		evlog_stream = fopen(fname, "w");
+		if (NULL != evlog_stream)
+			fprintf(evlog_stream, "FAKESTONTESTCASEFORMAT 1\n");
+	}
+}
 
-struct wl_event_source {
-	struct wl_event_source_interface *interface;
-	struct wl_event_loop *loop;
-	struct wl_list link;
-	void *data;
-	int fd;
-};
+static void doinit_logging(struct evdev_device *device, int device_fd)
+{
+	if (evlog_stream != NULL) {
+		char ename[128] = {0};
+		char dname[128] = {0};
+		device->dump.emu_file_id = rand();
+		device->dump.emu_desc_id = device_fd;
+		device->dump.evlog_burstseq = 0;
+		setvbuf(evlog_stream, NULL, _IOLBF, 256);
+		sprintf(ename, "/tmp/evemucase%u.txt", device->dump.emu_file_id);
+		sprintf(dname, "/tmp/evemudesc%u.txt", device->dump.emu_desc_id);
+		device->dump.out = fopen(ename, "w");
+		device->dump.dsc = fopen(dname, "w");
+	}
 
-struct wl_event_source_fd {
-	struct wl_event_source base;
-	wl_event_loop_fd_func_t func;
-	int fd;
-};
+	if (device->dump.dsc != NULL) {
+		struct evemu_device dev;
+		dev.version = 0x00010000;
 
+		fprintf(evlog_stream, "Edesc: %p evemudesc%u.txt\n",
+			device, device->dump.emu_desc_id);
+
+		if (0 == evemu_extract(&dev, device_fd)) {
+			evemu_write(&dev, device->dump.dsc);
+		}
+		fclose(device->dump.dsc);
+		device->dump.dsc = NULL;
+	}
+
+	if (device->dump.out != NULL) {
+		evlog_stream_cnt++;
+		setvbuf(device->dump.out, NULL, _IOLBF, 256);
+		fprintf(evlog_stream, "Erecd: %p evemucase%u.txt\n",
+			device, device->dump.emu_file_id);
+	}
+}
 
 struct evdev_device *
 evdev_device_create(struct weston_seat *seat, const char *path, int device_fd)
@@ -648,6 +825,11 @@ evdev_device_create(struct weston_seat *seat, const char *path, int device_fd)
 	if (device == NULL)
 		return NULL;
 	memset(device, 0, sizeof *device);
+
+	ininit_logging(device, device_fd);
+	if (evlog_stream)
+		fprintf(evlog_stream, "EprepareDEV: %p %p\n", device, seat);
+	doinit_logging(device, device_fd);
 
 	ec = seat->compositor;
 	device->output =
@@ -689,43 +871,20 @@ evdev_device_create(struct weston_seat *seat, const char *path, int device_fd)
 			weston_log("mtdev failed to open for %s\n", path);
 	}
 
-	fprintf(stderr, "evdevdata %p\n", evdev_device_data);
-	fprintf(stderr, "dev %p\n", device);
-
 	device->source = wl_event_loop_add_fd(ec->input_loop, device->fd,
 					      WL_EVENT_READABLE,
 					      evdev_device_data, device);
-
-	fprintf(stderr, "funkcia %p\n", evdev_device_data);
-
-	struct wl_event_source_fd *fdsource = device->source;
-
-	fprintf(stderr, "fdsrc %p\n", fdsource);
-
-	wl_event_loop_fd_func_t funkcia = fdsource->func;
-
-	fprintf(stderr, "funkcia %p\n", funkcia);
-
-/*
-	fprintf(stderr, "devsrcfd %p\n", device->source->func);
-*/
 	if (device->source == NULL)
 		goto err2;
 
-	if (evlog_stream == NULL) {
-/*
-		evlog_stream = fopen("/dev/shm/evlog.txt", "a");
-		setvbuf(evlog_stream, NULL, _IOLBF, 256);
-*/
-	}
-
-	fprintf(stderr, "ok\n");
+	fprintf(evlog_stream, "EcreateDEV: %p\n", device);
 
 	return device;
 
 err2:
 	device->dispatch->interface->destroy(device->dispatch);
 err1:
+	fprintf(evlog_stream, "EdestroyDEV: %p\n", device);
 	free(device->devname);
 	free(device->devnode);
 	free(device);
@@ -750,8 +909,19 @@ evdev_device_destroy(struct evdev_device *device)
 	free(device->devnode);
 	free(device);
 
-	if (evlog_stream)
-		fflush(evlog_stream);
+	if (evlog_stream) {
+		fprintf(evlog_stream, "EdestroyDEV: %p\n", device);
+		evlog_stream_cnt--;
+		if (evlog_stream_cnt == 0) {
+			fclose(evlog_stream);
+			evlog_stream = NULL;
+		}
+	}
+
+	if (device->dump.out) {
+		fclose(device->dump.out);
+		device->dump.out = NULL;
+	}
 }
 
 void
@@ -767,7 +937,7 @@ evdev_notify_keyboard_focus(struct weston_seat *seat,
 	int ret;
 
 	if (!seat->seat.keyboard)
-		return;
+		goto out;
 
 	memset(all_keys, 0, sizeof all_keys);
 	wl_list_for_each(device, evdev_devices, link) {
@@ -796,4 +966,7 @@ evdev_notify_keyboard_focus(struct weston_seat *seat,
 	notify_keyboard_focus_in(seat, &keys, STATE_UPDATE_AUTOMATIC);
 
 	wl_array_release(&keys);
+out:
+	if (evlog_stream != NULL)
+		fprintf(evlog_stream, "seatfocus: %p\n", seat);
 }
