@@ -1,0 +1,3 @@
+struct weston_matrix {
+};
+
