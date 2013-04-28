@@ -100,6 +100,8 @@ struct pload {
 
 typedef void (*fakestonph_f)(void*, char*, FILE *);
 
+extern struct pload *fixed_p;
+
 void fakeston_line_handler(void*data, char*tag, FILE *tcase);
 
 #endif

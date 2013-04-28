@@ -636,7 +636,6 @@ evdev_device_data(int fd, uint32_t mask, void *data)
 	return 1;
 }
 
-
 static int
 evdev_handle_device(struct evdev_device *device)
 {
@@ -651,6 +650,8 @@ evdev_handle_device(struct evdev_device *device)
 	has_key = 0;
 	has_abs = 0;
 	device->caps = 0;
+
+	foobar();
 
 	ioctl(device->fd, EVIOCGBIT(0, sizeof(ev_bits)), ev_bits);
 	ioctl_dump_long(device, "ev_bits", ev_bits, NBITS(EV_MAX));
@@ -941,6 +942,9 @@ evdev_notify_keyboard_focus(struct weston_seat *seat,
 
 	memset(all_keys, 0, sizeof all_keys);
 	wl_list_for_each(device, evdev_devices, link) {
+
+		foobar();
+
 		memset(evdev_keys, 0, sizeof evdev_keys);
 		ret = ioctl(device->fd,
 			    EVIOCGKEY(sizeof evdev_keys), evdev_keys);

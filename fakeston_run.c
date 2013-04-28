@@ -92,8 +92,12 @@ void
 notify_touch(struct weston_seat *seat, uint32_t time, int touch_id,
              wl_fixed_t x, wl_fixed_t y, int touch_type)
 {
+	/* verbose */
+
+
 	fprintf(stdout, "notify_touch\t%p\t%11u %11i %11u %11u %11i\n",
 		seat, time, touch_id, x, y, touch_type);
+
 }
 
 void

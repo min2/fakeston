@@ -225,9 +225,11 @@ void fakeston_line_handler(void*data, char*tag, FILE *tcase)
 		if (soff == p->shtsz) {
 			return;
 		}
+		fixed_p = p;
 
 		evdev_notify_keyboard_focus(&s[soff].whatever, &p->devices_list);
 
+		fixed_p = NULL;
 	} else
 	if (0 == strcmp(tag, "EcreateDEV:")) {
 		void *id, *seatid;
@@ -248,7 +250,12 @@ void fakeston_line_handler(void*data, char*tag, FILE *tcase)
 
 		int dev_fd = d[doff].fd;
 
+		fixed_p = p;
+
 		void *device = evdev_device_create(&s[soff].whatever, "<mock-dev-path>", dev_fd);
+
+		fixed_p = NULL;
+
 		if ((device == NULL) || (device == EVDEV_UNHANDLED_DEVICE)) {
 			fprintf(stdout, "FAKESTON: ERR: Cannot create device %p. \n", id);
 			return;
@@ -571,9 +578,9 @@ void fakeston_line_handler(void*data, char*tag, FILE *tcase)
 		struct wl_event_source_fd *fdsource = (struct wl_event_source_fd *) d[doff].device->source;
 
 		wl_event_loop_fd_func_t funkcia = fdsource->func;
-/*
-		printf("Pajpujem %u \n", n);
-*/
+
+
+
 		fixed_p = p;
 
 		funkcia(p->pajpa[0] , 1337, d[doff].device);
@@ -626,6 +633,7 @@ int ioctl (int __fd, unsigned long int __request, ...) {
 	va_list argp;
 	va_start(argp, __request);
 	char* dst = va_arg(argp, void*);
+
 	if ((fixed_p != NULL) && (__fd > 1337)) {
 		struct fakeston_evdev_rdev *r = (struct fakeston_evdev_rdev *) fixed_p->r;
 		struct fakeston_evdev_dev *d = (struct fakeston_evdev_dev *) fixed_p->d;
@@ -644,6 +652,7 @@ int ioctl (int __fd, unsigned long int __request, ...) {
 			char **source = &(d[off].ioctl_EVIOCGBIT_EV_BITS[0]);
 
 			if (source) {
+
 				memcpy(dst, *source, d[off].bitsbytes[0]);
 				return d[off].bitsbytes[0];
 			}
