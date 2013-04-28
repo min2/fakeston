@@ -3,13 +3,12 @@ From: Martin Minarik <minarik11@student.fiit.stuba.sk>
 Date: Sat, 6 Apr 2013 21:07:55 +0200
 Subject: [PATCH] Hacked weston
 
-This hacked weston records almost anything necessary to reproduce compositor
-behavior. produces EVEMU captures, they appear in /tmp/
-These captures can be replayed via EVEMU 
+This hacked weston produces EVEMU captures, they appear
+in /tmp/
 
 It also produces FAKESTON testcases.
 
-Captures the ioctls + the data.
+Captures the ioctls.
 Records ordering of event bursts.
 Logs evdev device create/destroy.
 ---
@@ -109,7 +108,7 @@ index d2954b5..169d138 100644
 +{
 +	if (evlog_stream == NULL)
 +		return;
-+	 
++
 +	fprintf(evlog_stream, "IOCTLDUMP: %p %s %zu ", d, tag, nbytes);
 +	size_t i;
 +	for (i = 0; i < nbytes; i++) {
@@ -321,14 +320,6 @@ index d2954b5..169d138 100644
  		evdev_process_events(device, ev, len / sizeof ev[0]);
  
  	} while (len > 0);
-@@ -398,6 +636,7 @@ evdev_device_data(int fd, uint32_t mask, void *data)
- 	return 1;
- }
- 
-+
- static int
- evdev_handle_device(struct evdev_device *device)
- {
 @@ -414,19 +653,23 @@ evdev_handle_device(struct evdev_device *device)
  	device->caps = 0;
  
