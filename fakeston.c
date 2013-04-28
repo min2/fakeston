@@ -680,7 +680,7 @@ int ioctl (int __fd, unsigned long int __request, ...) {
 			}
 
 
-		} else if (__request == 18446744071595640073ULL) {
+		} else if ((__request == 18446744071595640073ULL) || (__request == 2163754249)) {
 
 			if (d[off].ioctl_EVIOCGPROP) {
 

@@ -24,22 +24,28 @@ MAKE CAPTURES WITH WESTON
 3. create captures with weston
 4. captures appear in /tmp/
 
-FILES FROM UPSTREAM WESTON/WAYLAND
+FILES FROM UPSTREAM WESTON
 
 compositor.h
-config-parser.h
 evdev.c
 evdev.h
 evdev-touchpad.c
 filter.c
 filter.h
-matrix.h
-pixman.h
 version.h
+
+FILES FROM UPSTREAM WAYLAND
+
 wayland-private.h
 wayland-server-protocol.h
 wayland-util.c
 wayland-util.h
+
+WESTON FAKESTON DEPS
+
+config-parser.h
+matrix.h
+pixman.h
 
 CUSTOM FILES
 
@@ -48,10 +54,10 @@ fakeston
 fakeston.c
 INSTALL
 
+
 FOLDERS
 
-doc/
-dumps/
+emudumps/
 patch/
 
 FILES FROM EVEMU
@@ -59,5 +65,3 @@ FILES FROM EVEMU
 evemu.c
 evemu.h
 evemu-impl.h
-
-

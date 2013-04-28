@@ -80,6 +80,18 @@ notify_motion(struct weston_seat *seat,
 }
 
 void
+notify_motion_absolute(struct weston_seat *seat, uint32_t time,
+		       wl_fixed_t x, wl_fixed_t y)
+{
+/*
+	verbose
+*/
+
+	fprintf(stdout, "notify_motion_absolute\t%p\t%11u %11i %11i\n",
+		seat, time, x, y);
+}
+
+void
 notify_key(struct weston_seat *seat, uint32_t time, uint32_t key,
 	   enum wl_keyboard_key_state state,
 	   enum weston_key_state_update update_state)

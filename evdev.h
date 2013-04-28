@@ -45,14 +45,6 @@ enum evdev_device_capability {
 	EVDEV_TOUCH = (1 << 4),
 };
 
-struct fakeston_elog {
-	FILE* out;
-	FILE* dsc;
-	unsigned int emu_file_id;
-	unsigned int emu_desc_id;
-	unsigned int evlog_burstseq;
-};
-
 struct evdev_device {
 	struct weston_seat *seat;
 	struct wl_list link;
@@ -85,8 +77,6 @@ struct evdev_device {
 	enum evdev_device_capability caps;
 
 	int is_mt;
-
-	struct fakeston_elog dump;
 };
 
 /* copied from udev/extras/input_id/input_id.c */

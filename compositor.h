@@ -24,6 +24,10 @@
 #ifndef _WAYLAND_SYSTEM_COMPOSITOR_H_
 #define _WAYLAND_SYSTEM_COMPOSITOR_H_
 
+#ifdef  __cplusplus
+extern "C" {
+#endif
+
 #include "pixman.h"
 #include <xkbcommon/xkbcommon.h>
 #include <wayland-server.h>
@@ -182,6 +186,7 @@ struct weston_output {
 	struct weston_mode *origin;
 	struct wl_list mode_list;
 
+	void (*start_repaint_loop)(struct weston_output *output);
 	void (*repaint)(struct weston_output *output,
 			pixman_region32_t *damage);
 	void (*destroy)(struct weston_output *output);
@@ -227,6 +232,7 @@ struct weston_seat {
 	int has_keyboard;
 	struct wl_touch touch;
 	int has_touch;
+	struct wl_signal destroy_signal;
 
 	struct weston_compositor *compositor;
 	struct weston_surface *sprite;
@@ -257,7 +263,9 @@ struct weston_seat {
 enum {
 	WESTON_COMPOSITOR_ACTIVE,
 	WESTON_COMPOSITOR_IDLE,		/* shell->unlock called on activity */
-	WESTON_COMPOSITOR_SLEEPING	/* no rendering, no frame events */
+	WESTON_COMPOSITOR_OFFSCREEN,	/* no rendering, no frame events */
+	WESTON_COMPOSITOR_SLEEPING	/* same as offscreen, but also set dmps
+                                         * to off */
 };
 
 struct weston_layer {
@@ -495,7 +503,7 @@ struct weston_surface {
 	 * are the sx and sy paramerters supplied to surface::attach .
 	 */
 	void (*configure)(struct weston_surface *es, int32_t sx, int32_t sy, int32_t width, int32_t height);
-	void *private;
+	void *configure_private;
 };
 
 enum weston_key_state_update {
@@ -555,7 +563,10 @@ weston_surface_activate(struct weston_surface *surface,
 			struct weston_seat *seat);
 void
 notify_motion(struct weston_seat *seat, uint32_t time,
-	      wl_fixed_t x, wl_fixed_t y);
+	      wl_fixed_t dx, wl_fixed_t dy);
+void
+notify_motion_absolute(struct weston_seat *seat, uint32_t time,
+		       wl_fixed_t x, wl_fixed_t y);
 void
 notify_button(struct weston_seat *seat, uint32_t time, int32_t button,
 	      enum wl_pointer_button_state state);
@@ -612,6 +623,8 @@ void
 weston_compositor_unlock(struct weston_compositor *compositor);
 void
 weston_compositor_wake(struct weston_compositor *compositor);
+void
+weston_compositor_offscreen(struct weston_compositor *compositor);
 void
 weston_compositor_sleep(struct weston_compositor *compositor);
 void
@@ -875,5 +888,9 @@ pixman_box32_t
 weston_transformed_rect(int width, int height,
 			enum wl_output_transform transform,
 			pixman_box32_t rect);
+
+#ifdef  __cplusplus
+}
+#endif
 
 #endif
