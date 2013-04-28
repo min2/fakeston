@@ -385,7 +385,7 @@ index d2954b5..169d138 100644
 +		sprintf(fname, "/tmp/ftestcase%u.txt", ftest_id);
 +		evlog_stream = fopen(fname, "w");
 +		if (NULL != evlog_stream)
-+			fprintf(evlog_stream, "FAKESTONTESTCASEFORMAT 1\n");
++			fprintf(evlog_stream, "FAKESTONTESTCASEFORMAT 2\n");
 +	}
 +}
 +

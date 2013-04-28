@@ -218,7 +218,7 @@ int main(int argc, char**argv)
 		return -2;
 	}
 
-	if (1 != format) {
+	if (2 != format) {
 		fprintf(stderr, "Error: unsupported format tft file '%s'\n", argv[1]);
 		return -3;
 	}
