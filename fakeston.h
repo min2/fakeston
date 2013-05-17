@@ -95,7 +95,9 @@ struct pload {
 	struct wl_list devices_list;
 	struct weston_compositor comp;
 	struct weston_output *output;
+/*
 	struct wl_keyboard k;
+*/
 };
 
 typedef void (*fakestonph_f)(void*, char*, FILE *);

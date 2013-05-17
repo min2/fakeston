@@ -289,7 +289,9 @@ void fakeston_line_handler(void*data, char*tag, FILE *tcase)
 				return;
 			s[soff].id = (uintptr_t) seatid;
 			s[soff].whatever.compositor = &p->comp;
+/*
 			s[soff].whatever.seat.keyboard = &p->k;
+*/
 		}
 
 		int dev_fd = p->fd_seq++;
@@ -782,7 +784,7 @@ int ioctl (int __fd, unsigned long int __request, ...) {
 				memcpy(dst, *source, d[off].relbits);
 				return d[off].relbits;
 			}
-		} else if ((__request == 2153792792ULL)) {
+		} else if ((__request == 2153792792ULL) || (__request == 2197832984ULL)) {
 
 			char *source = d[off].ioctl_EVIOCGKEY;
 

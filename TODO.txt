@@ -1,3 +1,25 @@
-A: are weird
+./fakeston_run mudumps/toshiba_dnes_drop_all/ftestcase1122169027.txt
+missing touchpad init:
+IOCTLDUMP: 0x24c2210 eviocg_abs_pressure 24 05 00 00 00 00 00 00 00 ff 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
 
+
+repeated notify_touch have different\wrong coordinates.... ???
+
+
+
+./fakeston_run mudumps/toshiba_dnes_drop_all/ftestcase113769324.txt
+missing touchpad init:
+IOCTLDUMP: 0x25b7330 eviocg_abs_pressure 24 00 00 00 00 00 00 00 00 ff 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+same event file
+wrong ordering ?? 
+
+
+
+mtdev failed to open for <mock-dev-path>
+
+
+
+need to look for:
+* non syn terminated burst
+* burst with multiple drop
 

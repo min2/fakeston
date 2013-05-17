@@ -1,6 +1,6 @@
-From a589673723c88f14542fcd7e647acfe30209b817 Mon Sep 17 00:00:00 2001
+From d568d622da3f3e303d15eb0d4c765ceccc30db5c Mon Sep 17 00:00:00 2001
 From: Martin Minarik <minarik11@student.fiit.stuba.sk>
-Date: Sat, 6 Apr 2013 21:07:55 +0200
+Date: Fri, 17 May 2013 17:35:17 +0200
 Subject: [PATCH] Hacked weston
 
 This hacked weston produces EVEMU captures, they appear
@@ -11,19 +11,19 @@ It also produces FAKESTON testcases.
 Captures the ioctls.
 Records ordering of event bursts.
 Logs evdev device create/destroy.
+
+Applies to weston 7b9195f9d6
 ---
  src/evdev-touchpad.c |    1 +
- src/evdev.c          |  328 +++++++++++++++++++++++++++++++++++++++++++++++++-
- src/evdev.h          |   10 ++
- src/evemu-impl.h     |   36 ++++++
- 4 files changed, 372 insertions(+), 3 deletions(-)
- create mode 100644 src/evemu-impl.h
+ src/evdev.c          |  320 +++++++++++++++++++++++++++++++++++++++++++++++++-
+ src/evdev.h          |   13 ++
+ 3 files changed, 332 insertions(+), 2 deletions(-)
 
 diff --git a/src/evdev-touchpad.c b/src/evdev-touchpad.c
-index c25a199..6d36d3e 100644
+index 4f9bb03..c889845 100644
 --- a/src/evdev-touchpad.c
 +++ b/src/evdev-touchpad.c
-@@ -678,6 +678,7 @@ touchpad_init(struct touchpad_dispatch *touchpad,
+@@ -692,6 +692,7 @@ touchpad_init(struct touchpad_dispatch *touchpad,
  	ioctl(device->fd, EVIOCGBIT(EV_ABS, sizeof(abs_bits)), abs_bits);
  	if (TEST_BIT(abs_bits, ABS_PRESSURE)) {
  		ioctl(device->fd, EVIOCGABS(ABS_PRESSURE), &absinfo);
@@ -32,7 +32,7 @@ index c25a199..6d36d3e 100644
  					    absinfo.minimum,
  					    absinfo.maximum);
 diff --git a/src/evdev.c b/src/evdev.c
-index d2954b5..169d138 100644
+index d8dd6d1..ab0c121 100644
 --- a/src/evdev.c
 +++ b/src/evdev.c
 @@ -26,7 +26,9 @@
@@ -320,7 +320,7 @@ index d2954b5..169d138 100644
  		evdev_process_events(device, ev, len / sizeof ev[0]);
  
  	} while (len > 0);
-@@ -414,19 +653,23 @@ evdev_handle_device(struct evdev_device *device)
+@@ -414,19 +652,23 @@ evdev_handle_device(struct evdev_device *device)
  	device->caps = 0;
  
  	ioctl(device->fd, EVIOCGBIT(0, sizeof(ev_bits)), ev_bits);
@@ -344,7 +344,7 @@ index d2954b5..169d138 100644
  			device->abs.min_y = absinfo.minimum;
  			device->abs.max_y = absinfo.maximum;
  			device->caps |= EVDEV_MOTION_ABS;
-@@ -434,10 +677,12 @@ evdev_handle_device(struct evdev_device *device)
+@@ -434,10 +676,12 @@ evdev_handle_device(struct evdev_device *device)
  		if (TEST_BIT(abs_bits, ABS_MT_SLOT)) {
  			ioctl(device->fd, EVIOCGABS(ABS_MT_POSITION_X),
  			      &absinfo);
@@ -357,7 +357,7 @@ index d2954b5..169d138 100644
  			device->abs.min_y = absinfo.minimum;
  			device->abs.max_y = absinfo.maximum;
  			device->is_mt = 1;
-@@ -448,6 +693,7 @@ evdev_handle_device(struct evdev_device *device)
+@@ -448,6 +692,7 @@ evdev_handle_device(struct evdev_device *device)
  	if (TEST_BIT(ev_bits, EV_REL)) {
  		ioctl(device->fd, EVIOCGBIT(EV_REL, sizeof(rel_bits)),
  		      rel_bits);
@@ -365,7 +365,7 @@ index d2954b5..169d138 100644
  		if (TEST_BIT(rel_bits, REL_X) || TEST_BIT(rel_bits, REL_Y))
  			device->caps |= EVDEV_MOTION_REL;
  	}
-@@ -455,6 +701,7 @@ evdev_handle_device(struct evdev_device *device)
+@@ -455,6 +700,7 @@ evdev_handle_device(struct evdev_device *device)
  		has_key = 1;
  		ioctl(device->fd, EVIOCGBIT(EV_KEY, sizeof(key_bits)),
  		      key_bits);
@@ -373,7 +373,7 @@ index d2954b5..169d138 100644
  		if (TEST_BIT(key_bits, BTN_TOOL_FINGER) &&
  		    !TEST_BIT(key_bits, BTN_TOOL_PEN) &&
  		    has_abs)
-@@ -518,6 +765,55 @@ evdev_configure_device(struct evdev_device *device)
+@@ -518,6 +764,55 @@ evdev_configure_device(struct evdev_device *device)
  	return 0;
  }
  
@@ -429,7 +429,7 @@ index d2954b5..169d138 100644
  struct evdev_device *
  evdev_device_create(struct weston_seat *seat, const char *path, int device_fd)
  {
-@@ -530,6 +826,11 @@ evdev_device_create(struct weston_seat *seat, const char *path, int device_fd)
+@@ -530,6 +825,11 @@ evdev_device_create(struct weston_seat *seat, const char *path, int device_fd)
  		return NULL;
  	memset(device, 0, sizeof *device);
  
@@ -441,7 +441,7 @@ index d2954b5..169d138 100644
  	ec = seat->compositor;
  	device->output =
  		container_of(ec->output_list.next, struct weston_output, link);
-@@ -576,11 +877,14 @@ evdev_device_create(struct weston_seat *seat, const char *path, int device_fd)
+@@ -576,11 +876,14 @@ evdev_device_create(struct weston_seat *seat, const char *path, int device_fd)
  	if (device->source == NULL)
  		goto err2;
  
@@ -456,7 +456,7 @@ index d2954b5..169d138 100644
  	free(device->devname);
  	free(device->devnode);
  	free(device);
-@@ -604,6 +908,20 @@ evdev_device_destroy(struct evdev_device *device)
+@@ -604,6 +907,19 @@ evdev_device_destroy(struct evdev_device *device)
  	free(device->devname);
  	free(device->devnode);
  	free(device);
@@ -465,8 +465,7 @@ index d2954b5..169d138 100644
 +		fprintf(evlog_stream, "EdestroyDEV: %p\n", device);
 +		evlog_stream_cnt--;
 +		if (evlog_stream_cnt == 0) {
-+			fclose(evlog_stream);
-+			evlog_stream = NULL;
++			fflush(evlog_stream);
 +		}
 +	}
 +
@@ -477,32 +476,8 @@ index d2954b5..169d138 100644
  }
  
  void
-@@ -619,13 +937,14 @@ evdev_notify_keyboard_focus(struct weston_seat *seat,
- 	int ret;
- 
- 	if (!seat->seat.keyboard)
--		return;
-+		goto out;
- 
- 	memset(all_keys, 0, sizeof all_keys);
- 	wl_list_for_each(device, evdev_devices, link) {
- 		memset(evdev_keys, 0, sizeof evdev_keys);
- 		ret = ioctl(device->fd,
- 			    EVIOCGKEY(sizeof evdev_keys), evdev_keys);
-+		ioctl_dump_long(device, "evdev_keys", (long unsigned int *) evdev_keys, NBITS(KEY_MAX));
- 		if (ret < 0) {
- 			weston_log("failed to get keys for device %s\n",
- 				device->devnode);
-@@ -647,4 +966,7 @@ evdev_notify_keyboard_focus(struct weston_seat *seat,
- 	notify_keyboard_focus_in(seat, &keys, STATE_UPDATE_AUTOMATIC);
- 
- 	wl_array_release(&keys);
-+out:
-+	if (evlog_stream != NULL)
-+		fprintf(evlog_stream, "seatfocus: %p\n", seat);
- }
 diff --git a/src/evdev.h b/src/evdev.h
-index eb5c868..958da6d 100644
+index eb5c868..6273099 100644
 --- a/src/evdev.h
 +++ b/src/evdev.h
 @@ -45,6 +45,14 @@ enum evdev_device_capability {
@@ -529,48 +504,14 @@ index eb5c868..958da6d 100644
  };
  
  /* copied from udev/extras/input_id/input_id.c */
-diff --git a/src/evemu-impl.h b/src/evemu-impl.h
-new file mode 100644
-index 0000000..ed4097b
---- /dev/null
-+++ b/src/evemu-impl.h
-@@ -0,0 +1,36 @@
-+/*
-+ * Copyright (C) 2010, 2011 Canonical Ltd.
-+ * Copyright (C) 2010 Henrik Rydberg <rydberg@euromail.se>
-+ *
-+ * This program is free software: you can redistribute it and/or modify it
-+ * under the terms of the GNU General Public License as published by the
-+ * Free Software Foundation, either version 3 of the License, or (at your
-+ * option) any later version.
-+ *
-+ * This program is distributed in the hope that it will be useful, but
-+ * WITHOUT ANY WARRANTY; without even the implied warranty of
-+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-+ * General Public License for more details.
-+ *
-+ * You should have received a copy of the GNU General Public License along
-+ * with this program.  If not, see <http://www.gnu.org/licenses/>.
-+ */
-+#ifndef _EVEMU_IMPL_H
-+#define _EVEMU_IMPL_H
+@@ -124,4 +134,7 @@ void
+ evdev_notify_keyboard_focus(struct weston_seat *seat,
+ 			    struct wl_list *evdev_devices);
+ 
++void ioctl_dump_char(struct evdev_device *d, char *tag, char *map, size_t nbytes);
++void ioctl_dump_long(struct evdev_device *d, char *tag, unsigned long *map, size_t n);
 +
-+#include <linux/uinput.h>
-+
-+#define EVPLAY_NBITS	KEY_CNT
-+#define EVPLAY_NBYTES	((EVPLAY_NBITS + 7) / 8)
-+
-+struct evemu_device {
-+	unsigned int version;
-+	char name[UINPUT_MAX_NAME_SIZE];
-+	struct input_id id;
-+	unsigned char prop[EVPLAY_NBYTES];
-+	unsigned char mask[EV_CNT][EVPLAY_NBYTES];
-+	int pbytes, mbytes[EV_CNT];
-+	struct input_absinfo abs[ABS_CNT];
-+};
-+
-+#endif
+ #endif /* EVDEV_H */
 -- 
 1.7.10.4
 

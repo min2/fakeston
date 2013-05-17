@@ -45,6 +45,14 @@ enum evdev_device_capability {
 	EVDEV_TOUCH = (1 << 4),
 };
 
+struct fakeston_elog {
+	FILE* out;
+	FILE* dsc;
+	unsigned int emu_file_id;
+	unsigned int emu_desc_id;
+	unsigned int evlog_burstseq;
+};
+
 struct evdev_device {
 	struct weston_seat *seat;
 	struct wl_list link;
@@ -77,6 +85,8 @@ struct evdev_device {
 	enum evdev_device_capability caps;
 
 	int is_mt;
+
+	struct fakeston_elog dump;
 };
 
 /* copied from udev/extras/input_id/input_id.c */
@@ -123,5 +133,8 @@ evdev_device_destroy(struct evdev_device *device);
 void
 evdev_notify_keyboard_focus(struct weston_seat *seat,
 			    struct wl_list *evdev_devices);
+
+void ioctl_dump_char(struct evdev_device *d, char *tag, char *map, size_t nbytes);
+void ioctl_dump_long(struct evdev_device *d, char *tag, unsigned long *map, size_t n);
 
 #endif /* EVDEV_H */
