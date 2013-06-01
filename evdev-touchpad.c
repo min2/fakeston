@@ -692,7 +692,6 @@ touchpad_init(struct touchpad_dispatch *touchpad,
 	ioctl(device->fd, EVIOCGBIT(EV_ABS, sizeof(abs_bits)), abs_bits);
 	if (TEST_BIT(abs_bits, ABS_PRESSURE)) {
 		ioctl(device->fd, EVIOCGABS(ABS_PRESSURE), &absinfo);
-		ioctl_dump_char(device, "eviocg_abs_pressure", (char *) &absinfo, sizeof(absinfo));
 		configure_touchpad_pressure(touchpad,
 					    absinfo.minimum,
 					    absinfo.maximum);

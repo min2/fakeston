@@ -21,7 +21,6 @@
 #include <stdarg.h>
 #include <stdint.h>
 
-#include "uthash.h"
 #include "wayland-server-protocol.h"
 #include "compositor.h"
 
@@ -44,7 +43,6 @@ struct wl_event_source_fd {
 struct fakeston_evdev_seat {
 	uintptr_t id;
 	struct weston_seat whatever;
-	UT_hash_handle hh; /* makes this structure hashable */
 };
 
 struct fakeston_evdev_rev {
@@ -85,7 +83,6 @@ struct fakeston_evdev_dev {
 	int fd;
 	int emu_file_id;
 	int emu_desc_id;
-	UT_hash_handle hh; /* makes this structure hashable */
 };
 
 struct pload {

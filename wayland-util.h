@@ -56,7 +56,7 @@ struct wl_interface {
 
 struct wl_object {
 	const struct wl_interface *interface;
-	void (* const * implementation)(void);
+	const void *implementation;
 	uint32_t id;
 };
 
@@ -105,8 +105,8 @@ struct wl_list {
 void wl_list_init(struct wl_list *list);
 void wl_list_insert(struct wl_list *list, struct wl_list *elm);
 void wl_list_remove(struct wl_list *elm);
-int wl_list_length(struct wl_list *list);
-int wl_list_empty(struct wl_list *list);
+int wl_list_length(const struct wl_list *list);
+int wl_list_empty(const struct wl_list *list);
 void wl_list_insert_list(struct wl_list *list, struct wl_list *other);
 
 #ifdef __GNUC__
@@ -152,7 +152,7 @@ struct wl_array {
 };
 
 #define wl_array_for_each(pos, array)					\
-	for (pos = (array)->data;					\
+	for (pos = (typeof (pos)) (array)->data;					\
 	     (const char *) pos < ((const char *) (array)->data + (array)->size); \
 	     (pos)++)
 

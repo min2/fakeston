@@ -1,12 +1,22 @@
 FAKESTON is used to replay weston evdev captures
 /mouse click, keys, touch, axis, etc./ to weston's evdev.c
 
+FEATURES
+-full multi seat support
+-captures EVERY event
+-fully /evemu/compatible and user friendly dump format
+-captures even frame drop
+-can replay every capture, quickly
+
+LIMITATION
+-no mtdev replay support at the moment /only capture/
+
 SETUP / USEAGE
 
    ./build.sh
    ./fakeston_run    fakeston_test_file
 
-EXAMPLE USEAGE
+EXAMPLE USEAGE - REPLAYING EXISTING CAPTURES
 
    ./fakeston_run   ./emudumps/hw_test3/ftestcase1562749452.txt
 
@@ -14,7 +24,7 @@ You can now see the compositor notify() called. they are
 produced from replaying all the evemu captures /in parallel/
 via evdev.c exactly as if you were running a weston compositor.
 
-MAKE CAPTURES WITH WESTON
+MAKE CUSTOM CAPTURES WITH WESTON
 
 1. apply patch/ to weston:
 

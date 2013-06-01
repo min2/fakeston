@@ -15,21 +15,8 @@
  * with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <stdio.h>
-#include <stdint.h>
-#include <string.h>
 #include <stdlib.h>
-
-#include "evemu-impl.h"
-
 #include "fakeston.h"
-
-/* the fake compositor*/
-
-#include <linux/input.h>
-#include <fcntl.h>
-#include "wayland-server-protocol.h"
-#include "compositor.h"
 #include "evdev.h"
 
 
@@ -48,28 +35,28 @@ void
 notify_button(struct weston_seat *seat, uint32_t time, int32_t button,
 	      enum wl_pointer_button_state state)
 {
-/*
+
 	fprintf(stdout, "notify_button\t%p\t%11u %11i %11u\n",
 		seat, time, button, state);
-*/
+
 }
 
 void
 notify_axis(struct weston_seat *seat, uint32_t time, uint32_t axis,
 	    wl_fixed_t value)
 {
-/*
+
 	fprintf(stdout, "notify_axis\t%p\t%11u %11u %11u\n",
 		seat, time, axis, value);
-*/
+
 }
 
 void
 notify_modifiers(struct weston_seat *seat, uint32_t serial)
 {
-/*
+
 	fprintf(stdout, "notify_modifiers\t%p\t%11u\n", seat, serial);
-*/
+
 }
 
 void
@@ -92,10 +79,10 @@ notify_motion_absolute(struct weston_seat *seat, uint32_t time,
 /*
 	verbose
 */
-/*
+
 	fprintf(stdout, "notify_motion_absolute\t%p\t%11u %11i %11i\n",
 		seat, time, x, y);
-*/
+
 }
 
 void
@@ -103,10 +90,10 @@ notify_key(struct weston_seat *seat, uint32_t time, uint32_t key,
 	   enum wl_keyboard_key_state state,
 	   enum weston_key_state_update update_state)
 {
-/*
+
 	fprintf(stdout, "notify_key\t%p\t%11u %11u %11u %11u\n",
 		seat, time, key, state, update_state);
-*/
+
 }
 
 void
@@ -114,10 +101,10 @@ notify_touch(struct weston_seat *seat, uint32_t time, int touch_id,
              wl_fixed_t x, wl_fixed_t y, int touch_type)
 {
 	/* verbose */
-/*
+
 	fprintf(stdout, "notify_touch\t%p\t%11u %11i %11u %11u %11i\n",
 		seat, time, touch_id, x, y, touch_type);
-*/
+
 }
 
 void
@@ -208,91 +195,6 @@ int main(int argc, char**argv)
 		return -1;
 	}
 
-	FILE *tcase;
-	tcase = fopen(argv[1], "r");
-
-	if (tcase == NULL) {
-		fprintf(stderr, "Error: cannot open ftf file '%s'\n", argv[1]);
-		return -1;
-	}
-
-	char form[128];
-	unsigned int format;
-
-	fscanf(tcase, "%127s %u\n", form, &format);
-
-	if (0 != strcmp("FAKESTONTESTCASEFORMAT", form)) {
-		fprintf(stderr, "Error: bad format tft file '%s'\n", argv[1]);
-		return -2;
-	}
-
-	if (2 != format) {
-		fprintf(stderr, "Error: unsupported format tft file '%s'\n", argv[1]);
-		return -3;
-	}
-
-	const size_t shtsz = 8;/* how many seats in hashtable */
-	const size_t dhtsz = 128;/* how many devices in hashtable */
-
-	struct weston_mode mode;
-	mode.width = 1024;
-	mode.height = 768;
-	struct weston_output output;
-	struct fakeston_evdev_rev reverseseats_htable[shtsz];
-	struct fakeston_evdev_seat seats_htable[shtsz];
-	struct fakeston_evdev_dev devices_htable[dhtsz];
-	struct fakeston_evdev_rev reversedev_htable[dhtsz];
-	struct pload p;
-	memset(reverseseats_htable, 0, sizeof(reverseseats_htable));
-	memset(seats_htable, 0, sizeof(seats_htable));
-	memset(devices_htable, 0, sizeof(devices_htable));
-	memset(reversedev_htable, 0, sizeof(reversedev_htable));
-	p.shtsz = shtsz;
-	p.dhtsz = dhtsz;
-	p.d = devices_htable;
-	p.s = seats_htable;
-	p.r = reversedev_htable;
-	p.z = reverseseats_htable;
-	p.seq = 0;
-	p.fd_seq = 1338;
-	p.subfolder = strdup(argv[1]);
-	sf(p.subfolder);
-	p.comp.focus = 1;
-	p.output = &output;
-	output.current = &mode;
-	p.comp.config = (void *) fakeston_api_handler;
-
-	wl_list_init(&p.devices_list);
-
-	if (pipe(p.pajpa) < 0) {
-		fprintf(stderr, "Failed pipe\n");
-		return -1;
-	}
-
-	fcntl(p.pajpa[0], F_SETFD, fcntl(p.pajpa[0], F_GETFD) | FD_CLOEXEC);
-	fcntl(p.pajpa[0], F_SETFL, fcntl(p.pajpa[0], F_GETFL) | O_NONBLOCK);
-	fcntl(p.pajpa[1], F_SETFD, fcntl(p.pajpa[1], F_GETFD) | FD_CLOEXEC);
-
-	fakeston_parse(tcase, fakeston_line_handler, (void*)&p);
-
-	fclose(tcase);
-
-	struct evdev_device *device, *previous = NULL;
-	wl_list_for_each(device, &p.devices_list, link) {
-		if (previous) {
-			fixed_p = &p;
-			evdev_device_destroy(previous);
-			fixed_p = NULL;
-		}
-		previous = device;
-	}
-	if (previous) {
-		fixed_p = &p;
-		evdev_device_destroy(previous);
-		fixed_p = NULL;
-	}
-
-	free(p.subfolder);
-
-	return 0;
+	return fakeston_main(argv[1]);
 }
+

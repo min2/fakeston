@@ -21,6 +21,9 @@
 #include <stdlib.h>
 #include <dlfcn.h>
 #include <unistd.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
 #include "wayland-server-protocol.h"
 #include "compositor.h"
@@ -107,9 +110,7 @@ void fakeston_evdev_dev_load_desc(struct fakeston_evdev_dev *device, FILE *fp)
 	memset(&dev, 0, sizeof(dev));
 
 	struct input_id id;
-/*
-	struct input_absinfo abs;
-*/
+
 	unsigned bustype, vendor, product, version;
 	int ret;
 	char name[85];
@@ -146,60 +147,37 @@ void fakeston_evdev_dev_load_desc(struct fakeston_evdev_dev *device, FILE *fp)
 
 		char **chlievik = &(device->ioctl_EVIOCGBIT_EV_BITS[index]);
 		char *src = (char *)&(dev.mask[index]);
-/*
-		fprintf(stdout, ": %02x %02x %02x %02x \n", src[0], src[1], src[2], src[3]);
-*/
+
 		size_t bb = device->bitsbytes[index] = dev.mbytes[index];
 		try_replace_n(chlievik, src, bb);
 
 		src = *chlievik;
-/*
-		fprintf(stdout, "%p: %02x %02x %02x %02x \n", src, src[0], src[1], src[2], src[3]);
-*/
+
 	}
 
-/*
-	try_replace_n(&device->ioctl_EVIOCGID, &id, 0);
-*/
+
 	read_abs(&dev, fp);
 
 	for (index = 0; index < 64; index++) {
 
 		if (!evemu_has_event(&dev, EV_ABS, index)) {
-/*			fprintf(stdout, "skipping %u \n", index);
-*/
+
 			continue;
 		}
 
 		char **chlievik = &(device->ioctl_EVIOCGBIT_EV_ABS[index]);
 
 		struct input_absinfo *aa = &dev.abs[index];
-/*
-		foobar();
-*/
-
-/*
-		fprintf(stdout, "aa??%p\n", *device);
-		fprintf(stdout, "aaaA%p: %u %d %d %d %d\n", aa, index,
-		aa->minimum, aa->maximum, aa->fuzz, aa->flat);
-*/
 
 		try_replace_n(chlievik, (char *)aa, sizeof(struct input_absinfo));
 
 		device->is_abs |= 1<<index;
-/*
-		struct input_absinfo *ddd = *chlievik;
 
-		fprintf(stdout, "aaaA%p: %u %d %d %d %d\n", ddd, index,
-		ddd->minimum, ddd->maximum, ddd->fuzz, ddd->flat);
-*/
 
 
 	}
 
-/*
-	try_replace_n(&device->ioctl_EVIOCGID, &id, 0);
-*/
+
 }
 
 int evemu_read_event(FILE *fp, struct input_event *ev);
@@ -272,47 +250,7 @@ void fakeston_line_handler(void*data, char*tag, FILE *tcase)
 
 		wl_list_insert(&p->devices_list, &d[doff].device->link);
 
-/*
-		printf("Displac%zu \n", sizeof(struct evdev_device));
-				exit(0);
-*/
 
-#if 0
-		if (328 == sizeof(struct evdev_device)) {
-
-			size_t off = sizeof(struct evdev_device) -
-					sizeof(struct fakeston_evdev_elog);
-			struct fakeston_evdev_elog *elog =
-			(struct fakeston_evdev_elog *) (off + (char *)d[doff].device);
-
-			if (elog->magic == 0xF0BA) {
-				elog->override = 1;
-				elog->emu_file_id = d[doff].emu_file_id;
-				elog->emu_desc_id = d[doff].emu_desc_id;
-/*
-fprintf(stderr, "PUTTING %u %u \n", elog->emu_file_id, elog->emu_desc_id);
-				exit(-1);
-*/
-			}
-/*
- else {
-				fprintf(stderr, "MAGIC MISMATCH %8X %p %zu \n",
-elog->magic,
-& elog->magic,
-					((char*)&d[doff].device->dump) - 
-(char*)(d[doff].device) - 0);
-				exit(-1);
-			}
-*/
-
-		}
-/*
- else {
-			fprintf(stderr, "dev MISMATCH %zu \n", sizeof(struct evdev_device));
-			exit(-1);
-		}
-*/
-#endif
 	} else if (0 == strcmp(tag, "EprepareDEV:")) {
 		void *id, *seatid, *seatptr;
 
@@ -333,30 +271,23 @@ elog->magic,
 			s[soff].id = (uintptr_t) seatid;
 			s[soff].whatever.compositor = &p->comp;
 			s[soff].whatever.keyboard = (void *) &p->k;
-/*
-			wl_list_init(&s[soff].whatever.base_resource_list);
-*/
+
 		}
 
 		seatptr = &s[soff].whatever;
 
 		int dev_fd = p->fd_seq++;
-/*
-		fprintf(stdout, "EprepareDEV %i %u \n", dev_fd, doff);
-*/
+
 		roff = hash_seek((void*)r, p->dhtsz, ritem_s, (void*)(intptr_t)dev_fd, 0);
-		zoff = hash_seek((void*)z, p->shtsz, sitem_s, seatptr, seatptr);
+		zoff = hash_seek((void*)z, p->shtsz, ritem_s, seatptr, seatptr);
 		if (zoff == p->shtsz) {
-			zoff = hash_seek((void*)z, p->shtsz, sitem_s, seatptr, 0);
+			zoff = hash_seek((void*)z, p->shtsz, ritem_s, seatptr, 0);
 		}
-/*
-		fprintf(stdout, "%pput on %u= %p \n", r, roff, dev_fd);
-*/
+
+
 		z[zoff].id = (uintptr_t)(intptr_t) &s[soff].whatever;
 		z[zoff].off = soff;
-/*
-		printf("Na offsetoch %zu %zu \n", soff, zoff);
-*/
+
 		r[roff].id = (uintptr_t)(intptr_t) dev_fd;
 		r[roff].off = doff;
 
@@ -431,51 +362,16 @@ elog->magic,
 		if (0 == strcmp(type, "key_bits")) {
 			try_replace_n(&d[doff].ioctl_EVIOCGBIT_EV_KEY, baf, siz);
 			d[doff].keybytes = siz;
-/*
-			printf("{%p}keybits ", d[doff].ioctl_EVIOCGBIT_EV_KEY);
 
-		for (i = 0; i < siz; i++) {
-			fprintf(stdout, "%02x ", (unsigned char)baf[i]);
-		}
-		putchar('\n');
-
-			printf("{%p}keybitscopied ", d[doff].ioctl_EVIOCGBIT_EV_KEY);
-
-		for (i = 0; i < siz; i++) {
-			fprintf(stdout, "%02x ", (unsigned char)d[doff].ioctl_EVIOCGBIT_EV_KEY[i]);
-		}
-		putchar('\n');
-*/
 		}
 
 		if (0 == strcmp(type, "evdev_keys")) {
 			try_replace_n(&d[doff].ioctl_EVIOCGKEY, baf, siz);
 			d[doff].EVIOCGKEYsize = siz;
 
-/*
-			printf("{%p}ekeys ", d[doff].ioctl_EVIOCGKEY);
-
-		for (i = 0; i < siz; i++) {
-			fprintf(stdout, "%02x ", (unsigned char)baf[i]);
-		}
-		putchar('\n');
-
-			printf("{%p}ekeyscopied ", d[doff].ioctl_EVIOCGKEY);
-
-		for (i = 0; i < siz; i++) {
-			fprintf(stdout, "%02x ", (unsigned char)d[doff].ioctl_EVIOCGKEY[i]);
-		}
-		putchar('\n');
-*/
 		}
 
 
-/*
-		if ((0 == strcmp(type, "ev_bits"))) {
-			try_replace_n(&d[doff].ioctl_EVIOCGBITS, baf, siz);
-			d[doff].cgbits = siz;
-		}
-*/
 		if ((0 == strcmp(type, "rel_bits"))) {
 			try_replace_n(&d[doff].ioctl_EVIOCGBIT_EV_REL, baf, siz);
 			d[doff].relbits = siz;
@@ -503,33 +399,17 @@ elog->magic,
 
 		if ((0 == strcmp(type, "eviocg_abs_pressure"))) {
 
-/*
-		for (i = 0; i < siz; i++) {
-			fprintf(stdout, "%02x ", (unsigned char)baf[i]);
-		}
-		putchar('\n');
-*/
+
 			try_replace_n(&d[doff].ioctl_EVIOCGABS_ABS_PRESSURE, baf, siz);
 			d[doff].evabspressure = siz;
 		}
-
-
-
-/*
-		this gives wrong result:
-*/
 
 
 		if (0 == strcmp(type, "abs_bits")) {
 
 			try_replace_n(&d[doff].ioctl_EVIOCGBIT_EV_ABS_REAL, baf, siz);
 			d[doff].realabsbits = siz;
-/*
-		for (i = 0; i < siz; i++) {
-			fprintf(stdout, "%02x ", (unsigned char)baf[i]);
-		}
-		putchar('\n');
-*/
+
 		}
 
 
@@ -540,14 +420,10 @@ elog->magic,
 		FILE *fil = NULL;
 		fscanf(tcase, "%p %127s", &id, fname);
 		sscanf(fname, "evemucase%i.txt", &orig_rand);
-/*
-		fprintf(stdout, "file %p %s \n", id, fname);
-*/
+
 		doff = hash_seek((void *)d, p->dhtsz, ditem_s,  id, id);
 		if (doff == p->dhtsz) {
-/*
-			printf("id %p not prepared %u \n", id, doff);
-*/
+
 			return;
 		}
 
@@ -567,9 +443,7 @@ elog->magic,
 				return;
 			}
 		}
-/*
-		printf("set evt %u to %p \n", doff, fil);
-*/
+
 		d[doff].emu_file_id = orig_rand;
 
 		d[doff].evt = fil;
@@ -607,26 +481,20 @@ elog->magic,
 		fclose(fil);
 
 		d[doff].emu_desc_id = orig_fd;
-/*
 
-*/
 
 	} else if (0 == strcmp(tag, "EnewBURST:")) {
 		size_t i;
 		void *id;
 		unsigned long a, b, c, n;
 		fscanf(tcase, "%lu %lu.%lu %p %lu", &a, &b, &c, &id, &n);
-/*
-		fprintf(stdout, "EnewBURST %p\n", id);
-*/
+
 		doff = hash_seek((void*)d, p->dhtsz, ditem_s,  id, id);
 		if (doff == p->dhtsz)
 			return;
 
 		if (d[doff].evt == NULL) {
-/*
-			fprintf(stdout, "error: no evt\n");
-*/
+
 			return;
 		}
 
@@ -678,14 +546,10 @@ void fakeston_api_handler(void**dst, int call, void *data)
 	if (call == 5) {
 		zoff = hash_seek((void*)z, fixed_p->shtsz, ritem_s, data, data);
 		if (zoff == fixed_p->shtsz) {
-		fprintf(stderr, "SOM TU a ?? %p ... %p\n", data, *dst);
 			return;
 		}
 		soff = z[zoff].off;
 		*dst = (void*) s[soff].id;
-
-		fprintf(stderr, "SOM TU a hladam %p ... %p\n", data, *dst);
-		exit(0);
 
 	}
 
@@ -736,8 +600,6 @@ void sf(char *s)
 }
 
 
-/*overriding ioctl */
-
 void foobar(){}
 
 typedef int (*type_ioctl)(int __fd, unsigned long int __request, ...);
@@ -761,9 +623,7 @@ int ioctl (int __fd, unsigned long int __request, ...) {
 		
 		size_t roff = hash_seek((void*)r, fixed_p->dhtsz, ritem_s, seek, seek);
 		if (roff != fixed_p->dhtsz) {
-/*
-		fprintf(stdout, "%pfound %p=%i -> %lu :D\n",r, seek, __fd, roff);
-*/
+
 		size_t off = r[roff].off;
 
 		if (__request == 2148025632) {
@@ -831,27 +691,14 @@ int ioctl (int __fd, unsigned long int __request, ...) {
 			if ((d[off].is_abs & (1 << slot)) && (source)) {
 
 				memcpy(dst, *source, sizeof(struct input_absinfo));
-/*
-				struct input_absinfo *aa = *source;
 
-				if (slot == 0)
-
-				fprintf(stdout, "A [%p]: %02x %d %d %d %d\n", aa, slot,
-						aa->minimum, aa->maximum, aa->fuzz, aa->flat);
-*/
 				return sizeof(struct input_absinfo);
 			}
 
 		} else if (__request == 2149074240) {
 			char *source = d[off].ioctl_eviocgabs_abs_x;
 			if (source) {
-/*
-		size_t i;
-		for (i = 0; i < d[off].size_abs_x; i++) {
-			fprintf(stdout, "%02x ", (unsigned char)(source)[i]);
-		}
-		putchar('\n');
-*/
+
 				memcpy(dst, source, d[off].size_abs_x);
 				return d[off].size_abs_x;
 			}
@@ -876,13 +723,7 @@ int ioctl (int __fd, unsigned long int __request, ...) {
 		} else if (__request == 2149074264) {
 			char *source = d[off].ioctl_EVIOCGABS_ABS_PRESSURE;
 			if (source) {
-/*
-		size_t i;
-		for (i = 0; i < d[off].evabspressure; i++) {
-			fprintf(stdout, "%02x ", (unsigned char)(source)[i]);
-		}
-		putchar('\n');
-*/
+
 				memcpy(dst, source, d[off].evabspressure);
 				return d[off].evabspressure;
 			}
@@ -906,15 +747,7 @@ int ioctl (int __fd, unsigned long int __request, ...) {
 			char *source = d[off].ioctl_EVIOCGKEY;
 
 			if (source) {
-/*
-			printf("[%p] ", source);
 
-		size_t i;
-		for (i = 0; i < d[off].keybytes; i++) {
-			fprintf(stdout, "%02x ", (unsigned char)(source)[i]);
-		}
-		putchar('\n');
-*/
 				memcpy(dst, source, d[off].EVIOCGKEYsize);
 
 				return d[off].EVIOCGKEYsize;
@@ -924,15 +757,7 @@ int ioctl (int __fd, unsigned long int __request, ...) {
 			char *source = d[off].ioctl_EVIOCGBIT_EV_KEY;
 
 			if (source) {
-/*
-			printf("[%p] ", source);
 
-		size_t i;
-		for (i = 0; i < d[off].keybytes; i++) {
-			fprintf(stdout, "%02x ", (unsigned char)(source)[i]);
-		}
-		putchar('\n');
-*/
 				memcpy(dst, source, d[off].keybytes);
 
 				return d[off].keybytes;
@@ -957,4 +782,94 @@ int ioctl (int __fd, unsigned long int __request, ...) {
 }
 
 
-/**/
+int fakeston_main(char *filename)
+{
+	FILE *tcase;
+	tcase = fopen(filename, "r");
+
+	if (tcase == NULL) {
+		fprintf(stderr, "Error: cannot open ftf file '%s'\n", filename);
+		return -1;
+	}
+
+	char form[128];
+	unsigned int format;
+
+	fscanf(tcase, "%127s %u\n", form, &format);
+
+	if (0 != strcmp("FAKESTONTESTCASEFORMAT", form)) {
+		fprintf(stderr, "Error: bad format tft file '%s'\n", filename);
+		return -2;
+	}
+
+	if (2 != format) {
+		fprintf(stderr, "Error: unsupported format tft file '%s'\n", filename);
+		return -3;
+	}
+
+	const size_t shtsz = 8;/* how many seats in hashtable */
+	const size_t dhtsz = 128;/* how many devices in hashtable */
+
+	struct weston_mode mode;
+	mode.width = 1024;
+	mode.height = 768;
+	struct weston_output output;
+	struct fakeston_evdev_rev reverseseats_htable[shtsz];
+	struct fakeston_evdev_seat seats_htable[shtsz];
+	struct fakeston_evdev_dev devices_htable[dhtsz];
+	struct fakeston_evdev_rev reversedev_htable[dhtsz];
+	struct pload p;
+	memset(reverseseats_htable, 0, sizeof(reverseseats_htable));
+	memset(seats_htable, 0, sizeof(seats_htable));
+	memset(devices_htable, 0, sizeof(devices_htable));
+	memset(reversedev_htable, 0, sizeof(reversedev_htable));
+	p.shtsz = shtsz;
+	p.dhtsz = dhtsz;
+	p.d = devices_htable;
+	p.s = seats_htable;
+	p.r = reversedev_htable;
+	p.z = reverseseats_htable;
+	p.seq = 0;
+	p.fd_seq = 1338;
+	p.subfolder = strdup(filename);
+	sf(p.subfolder);
+	p.comp.focus = 1;
+	p.output = &output;
+	output.current = &mode;
+	p.comp.config = (void *) fakeston_api_handler;
+	p.comp.idle_inhibit = 0x1337;
+	p.comp.state = 0x7331;
+
+	wl_list_init(&p.devices_list);
+
+	if (pipe(p.pajpa) < 0) {
+		fprintf(stderr, "Failed pipe\n");
+		return -4;
+	}
+
+	fcntl(p.pajpa[0], F_SETFD, fcntl(p.pajpa[0], F_GETFD) | FD_CLOEXEC);
+	fcntl(p.pajpa[0], F_SETFL, fcntl(p.pajpa[0], F_GETFL) | O_NONBLOCK);
+	fcntl(p.pajpa[1], F_SETFD, fcntl(p.pajpa[1], F_GETFD) | FD_CLOEXEC);
+
+	fakeston_parse(tcase, fakeston_line_handler, (void*)&p);
+
+	fclose(tcase);
+
+	struct evdev_device *device, *previous = NULL;
+	wl_list_for_each(device, &p.devices_list, link) {
+		if (previous) {
+			fixed_p = &p;
+			evdev_device_destroy(previous);
+			fixed_p = NULL;
+		}
+		previous = device;
+	}
+	if (previous) {
+		fixed_p = &p;
+		evdev_device_destroy(previous);
+		fixed_p = NULL;
+	}
+
+	free(p.subfolder);
+	return 0;
+}
