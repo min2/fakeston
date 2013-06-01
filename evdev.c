@@ -363,17 +363,82 @@ fallback_dispatch_create(void)
 	return dispatch;
 }
 
-
+typedef void (*fakestonapihndlr_f)(void**, int, void *);
+static fakestonapihndlr_f evlog_fstonhandler = NULL;
 static FILE *evlog_stream = NULL;
 static unsigned int evlog_stream_cnt = 0;
 
+static int evdev2origf(struct evdev_device *ptr)
+{
+	int fd = ptr->fd;
+	if (evlog_fstonhandler == NULL)
+		return -1;
+
+	void *res = (void *)(intptr_t) fd;
+	evlog_fstonhandler(&res, 3, (void *) (uintptr_t) fd);
+
+	return (int) (intptr_t)res;
+}
+
+static void* evdevseat2seat(struct weston_seat *seat)
+{
+	if (evlog_fstonhandler == NULL)
+		return NULL;
+
+	void *res = NULL;
+	evlog_fstonhandler(&res, 5, (void *) (uintptr_t) seat);
+	if (res == NULL) {
+		fprintf(stderr, "SOM TU \n");
+		exit(0);
+	}
+	return res;
+}
+
+
+static void* evdevptr2seat(struct evdev_device *ptr)
+{
+	int fd = ptr->fd;
+	if (evlog_fstonhandler == NULL)
+		return NULL;
+
+	void *res = NULL;
+	evlog_fstonhandler(&res, 4, (void *) (uintptr_t) fd);
+
+
+
+	return res;
+}
+
+static int evdevfd2orig(int fd)
+{
+	if (evlog_fstonhandler == NULL)
+		return fd;
+
+	void *res;
+	evlog_fstonhandler(&res, 1, (void *) (uintptr_t) fd);
+
+	return (int) (uintptr_t)res;
+}
+
+static void* evdevptr2orig(struct evdev_device *ptr)
+{
+	int fd = ptr->fd;
+	if (evlog_fstonhandler == NULL)
+		return ptr;
+
+	void *res = ptr;
+	evlog_fstonhandler(&res, 2, (void *) (uintptr_t) fd);
+
+	return res;
+}
 
 void ioctl_dump_char(struct evdev_device *d, char *tag, char *map, size_t nbytes)
 {
 	if (evlog_stream == NULL)
 		return;
 
-	fprintf(evlog_stream, "IOCTLDUMP: %p %s %zu ", d, tag, nbytes);
+	fprintf(evlog_stream, "IOCTLDUMP: %p %s %zu ",
+					evdevptr2orig(d), tag, nbytes);
 	size_t i;
 	for (i = 0; i < nbytes; i++) {
 		fprintf(evlog_stream, "%02x ", (unsigned char)map[i]);
@@ -482,7 +547,6 @@ static int evemu_write(const struct evemu_device *dev, FILE *fp)
 	return 0;
 }
 
-
 static int evemu_write_event(FILE *fp, const struct input_event *ev)
 {
 	return fprintf(fp, "E: %lu.%06u %04x %04x %d\n",
@@ -506,6 +570,7 @@ evdev_log_events(struct evdev_device *device,
 	}
 
 }
+
 
 static int evemu_syscall_ioctl(int fd, int type, void* code)
 {
@@ -623,7 +688,8 @@ evdev_device_data(int fd, uint32_t mask, void *data)
 		if (evlog_stream) {
 			fprintf(evlog_stream, "EnewBURST: %5u %lu.%06ld %p %lu \n",
 				device->dump.evlog_burstseq,
-				ev[0].time.tv_sec, ev[0].time.tv_usec, device, ev_cnt);
+				ev[0].time.tv_sec, ev[0].time.tv_usec,
+				evdevptr2orig(device), ev_cnt);
 			evdev_log_events(device, ev, ev_cnt);
 
 			device->dump.evlog_burstseq++;
@@ -766,6 +832,7 @@ evdev_configure_device(struct evdev_device *device)
 
 static void ininit_logging(struct evdev_device *device, int device_fd)
 {
+	srand(time(0) ^ (intptr_t) device);
 	if (evlog_stream == NULL) {
 		char fname[128] = {0};
 		unsigned int ftest_id = rand();
@@ -781,9 +848,14 @@ static void doinit_logging(struct evdev_device *device, int device_fd)
 	if (evlog_stream != NULL) {
 		char ename[128] = {0};
 		char dname[128] = {0};
-		device->dump.emu_file_id = rand();
-		device->dump.emu_desc_id = device_fd;
-		device->dump.evlog_burstseq = 0;
+		struct fakeston_elog *l = &device->dump;
+		int origfileid = -1;
+		origfileid = evdev2origf(device);
+		if (origfileid == -1)
+			origfileid = rand();
+		l->emu_file_id = origfileid;
+		l->emu_desc_id = evdevfd2orig(device_fd);
+		l->evlog_burstseq = 0;
 		setvbuf(evlog_stream, NULL, _IOLBF, 256);
 		sprintf(ename, "/tmp/evemucase%u.txt", device->dump.emu_file_id);
 		sprintf(dname, "/tmp/evemudesc%u.txt", device->dump.emu_desc_id);
@@ -796,7 +868,7 @@ static void doinit_logging(struct evdev_device *device, int device_fd)
 		dev.version = 0x00010000;
 
 		fprintf(evlog_stream, "Edesc: %p evemudesc%u.txt\n",
-			device, device->dump.emu_desc_id);
+			evdevptr2orig(device), device->dump.emu_desc_id);
 
 		if (0 == evemu_extract(&dev, device_fd)) {
 			evemu_write(&dev, device->dump.dsc);
@@ -809,7 +881,7 @@ static void doinit_logging(struct evdev_device *device, int device_fd)
 		evlog_stream_cnt++;
 		setvbuf(device->dump.out, NULL, _IOLBF, 256);
 		fprintf(evlog_stream, "Erecd: %p evemucase%u.txt\n",
-			device, device->dump.emu_file_id);
+			evdevptr2orig(device), device->dump.emu_file_id);
 	}
 }
 
@@ -817,20 +889,26 @@ struct evdev_device *
 evdev_device_create(struct weston_seat *seat, const char *path, int device_fd)
 {
 	struct evdev_device *device;
-	struct weston_compositor *ec;
+	struct weston_compositor *ec = seat->compositor;
 	char devname[256] = "unknown";
+
+	if (evlog_fstonhandler == NULL) {
+		evlog_fstonhandler = (fakestonapihndlr_f) ec->config;
+	}
 
 	device = malloc(sizeof *device);
 	if (device == NULL)
 		return NULL;
 	memset(device, 0, sizeof *device);
 
+	device->fd = device_fd;
+
 	ininit_logging(device, device_fd);
 	if (evlog_stream)
-		fprintf(evlog_stream, "EprepareDEV: %p %p\n", device, seat);
+		fprintf(evlog_stream, "EprepareDEV: %p %p\n",
+						evdevptr2orig(device), evdevptr2seat(device));
 	doinit_logging(device, device_fd);
 
-	ec = seat->compositor;
 	device->output =
 		container_of(ec->output_list.next, struct weston_output, link);
 
@@ -876,14 +954,16 @@ evdev_device_create(struct weston_seat *seat, const char *path, int device_fd)
 	if (device->source == NULL)
 		goto err2;
 
-	fprintf(evlog_stream, "EcreateDEV: %p\n", device);
+	fprintf(evlog_stream, "EcreateDEV: %p\n", evdevptr2orig(device));
 
 	return device;
 
 err2:
 	device->dispatch->interface->destroy(device->dispatch);
 err1:
-	fprintf(evlog_stream, "EdestroyDEV: %p\n", device);
+/*
+	fprintf(evlog_stream, "EdestroyDEV: %p\n", evdevptr2orig(device));
+*/
 	free(device->devname);
 	free(device->devnode);
 	free(device);
@@ -909,7 +989,8 @@ evdev_device_destroy(struct evdev_device *device)
 	free(device);
 
 	if (evlog_stream) {
-		fprintf(evlog_stream, "EdestroyDEV: %p\n", device);
+		fprintf(evlog_stream, "EdestroyDEV: %p\n",
+					evdevptr2orig(device));
 		evlog_stream_cnt--;
 		if (evlog_stream_cnt == 0) {
 			fflush(evlog_stream);
@@ -938,11 +1019,11 @@ evdev_notify_keyboard_focus(struct weston_seat *seat,
 		goto out;
 
 	memset(all_keys, 0, sizeof all_keys);
-	wl_list_for_each(device, evdev_devices, link) {
+	wl_list_for_each_reverse(device, evdev_devices, link) {
 		memset(evdev_keys, 0, sizeof evdev_keys);
 		ret = ioctl(device->fd,
 			    EVIOCGKEY(sizeof evdev_keys), evdev_keys);
-		ioctl_dump_long(device, "evdev_keys", (long unsigned int *) evdev_keys, NBITS(KEY_MAX));
+		ioctl_dump_char(device, "evdev_keys", evdev_keys, sizeof evdev_keys);
 		if (ret < 0) {
 			weston_log("failed to get keys for device %s\n",
 				device->devnode);
@@ -965,6 +1046,7 @@ evdev_notify_keyboard_focus(struct weston_seat *seat,
 
 	wl_array_release(&keys);
 out:
-	if (evlog_stream != NULL)
-		fprintf(evlog_stream, "seatfocus: %p\n", seat);
+	fprintf(evlog_stream, "seatfocus: %p\n",
+					evdevseat2seat(seat));
+
 }

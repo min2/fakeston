@@ -211,11 +211,12 @@ void fakeston_line_handler(void*data, char*tag, FILE *tcase)
 	struct pload *p = ( struct pload *) data;
 	struct fakeston_evdev_dev *d = (struct fakeston_evdev_dev *) p->d;
 	struct fakeston_evdev_seat *s = (struct fakeston_evdev_seat *) p->s;
-	struct fakeston_evdev_rdev *r = (struct fakeston_evdev_rdev *) p->r;
-	size_t doff, soff, roff;
+	struct fakeston_evdev_rev *r = (struct fakeston_evdev_rev *) p->r;
+	struct fakeston_evdev_rev *z = (struct fakeston_evdev_rev *) p->z;
+	size_t doff, soff, roff, zoff;
 	size_t sitem_s = sizeof(struct fakeston_evdev_seat);
 	size_t ditem_s = sizeof(struct fakeston_evdev_dev);
-	size_t ritem_s = sizeof(struct fakeston_evdev_rdev);
+	size_t ritem_s = sizeof(struct fakeston_evdev_rev);
 	if (0 == strcmp(tag, "seatfocus:")) {
 		void *id;
 
@@ -252,7 +253,7 @@ void fakeston_line_handler(void*data, char*tag, FILE *tcase)
 
 		fixed_p = p;
 
-		void *device = evdev_device_create(&s[soff].whatever, "<mock-dev-path>", dev_fd);
+		struct evdev_device *device = evdev_device_create(&s[soff].whatever, "<mock-dev-path>", dev_fd);
 
 		fixed_p = NULL;
 
@@ -271,8 +272,49 @@ void fakeston_line_handler(void*data, char*tag, FILE *tcase)
 
 		wl_list_insert(&p->devices_list, &d[doff].device->link);
 
+/*
+		printf("Displac%zu \n", sizeof(struct evdev_device));
+				exit(0);
+*/
+
+#if 0
+		if (328 == sizeof(struct evdev_device)) {
+
+			size_t off = sizeof(struct evdev_device) -
+					sizeof(struct fakeston_evdev_elog);
+			struct fakeston_evdev_elog *elog =
+			(struct fakeston_evdev_elog *) (off + (char *)d[doff].device);
+
+			if (elog->magic == 0xF0BA) {
+				elog->override = 1;
+				elog->emu_file_id = d[doff].emu_file_id;
+				elog->emu_desc_id = d[doff].emu_desc_id;
+/*
+fprintf(stderr, "PUTTING %u %u \n", elog->emu_file_id, elog->emu_desc_id);
+				exit(-1);
+*/
+			}
+/*
+ else {
+				fprintf(stderr, "MAGIC MISMATCH %8X %p %zu \n",
+elog->magic,
+& elog->magic,
+					((char*)&d[doff].device->dump) - 
+(char*)(d[doff].device) - 0);
+				exit(-1);
+			}
+*/
+
+		}
+/*
+ else {
+			fprintf(stderr, "dev MISMATCH %zu \n", sizeof(struct evdev_device));
+			exit(-1);
+		}
+*/
+#endif
 	} else if (0 == strcmp(tag, "EprepareDEV:")) {
-		void *id, *seatid;
+		void *id, *seatid, *seatptr;
 
 		fscanf(tcase, "%p %p", &id, &seatid);
 
@@ -287,20 +329,33 @@ void fakeston_line_handler(void*data, char*tag, FILE *tcase)
 			soff = hash_seek((void*)s, p->shtsz, sitem_s,  seatid, 0);
 			if (soff == p->shtsz)
 				return;
+
 			s[soff].id = (uintptr_t) seatid;
 			s[soff].whatever.compositor = &p->comp;
+			s[soff].whatever.keyboard = (void *) &p->k;
 /*
-			s[soff].whatever.seat.keyboard = &p->k;
+			wl_list_init(&s[soff].whatever.base_resource_list);
 */
 		}
+
+		seatptr = &s[soff].whatever;
 
 		int dev_fd = p->fd_seq++;
 /*
 		fprintf(stdout, "EprepareDEV %i %u \n", dev_fd, doff);
 */
 		roff = hash_seek((void*)r, p->dhtsz, ritem_s, (void*)(intptr_t)dev_fd, 0);
+		zoff = hash_seek((void*)z, p->shtsz, sitem_s, seatptr, seatptr);
+		if (zoff == p->shtsz) {
+			zoff = hash_seek((void*)z, p->shtsz, sitem_s, seatptr, 0);
+		}
 /*
 		fprintf(stdout, "%pput on %u= %p \n", r, roff, dev_fd);
+*/
+		z[zoff].id = (uintptr_t)(intptr_t) &s[soff].whatever;
+		z[zoff].off = soff;
+/*
+		printf("Na offsetoch %zu %zu \n", soff, zoff);
 */
 		r[roff].id = (uintptr_t)(intptr_t) dev_fd;
 		r[roff].off = doff;
@@ -321,13 +376,18 @@ void fakeston_line_handler(void*data, char*tag, FILE *tcase)
 		if (doff == p->dhtsz)
 			return;
 
+		if (d[doff].created) {
+			fixed_p = p;
+			evdev_device_destroy(d[doff].device);
+			fixed_p = NULL;
+			d[doff].created = 0;
+		}
+
+		d[doff].created = 0;
+
 		d[doff].id = (uintptr_t) 0;
 		if (d[doff].evt) {
 			fclose(d[doff].evt);
-		}
-		if (d[doff].created) {
-			evdev_device_destroy(d[doff].device);
-			d[doff].created = 0;
 		}
 
 		try_free(&d[doff].ioctl_eviocgabs_abs_x);
@@ -476,8 +536,10 @@ void fakeston_line_handler(void*data, char*tag, FILE *tcase)
 	} else if (0 == strcmp(tag, "Erecd:")) {
 		void *id;
 		char fname[128] = {0};
+		int orig_rand = -1;
 		FILE *fil = NULL;
 		fscanf(tcase, "%p %127s", &id, fname);
+		sscanf(fname, "evemucase%i.txt", &orig_rand);
 /*
 		fprintf(stdout, "file %p %s \n", id, fname);
 */
@@ -508,12 +570,16 @@ void fakeston_line_handler(void*data, char*tag, FILE *tcase)
 /*
 		printf("set evt %u to %p \n", doff, fil);
 */
+		d[doff].emu_file_id = orig_rand;
+
 		d[doff].evt = fil;
 	} else if (0 == strcmp(tag, "Edesc:")) {
 		void *id;
 		char fname[128] = {0};
+		int orig_fd = -1;
 		FILE *fil = NULL;
 		fscanf(tcase, "%p %s", &id, fname);
+		sscanf(fname, "evemudesc%i.txt", &orig_fd);
 
 		doff = hash_seek((void *)d, p->dhtsz, ditem_s,  id, id);
 		if (doff == p->dhtsz)
@@ -539,6 +605,11 @@ void fakeston_line_handler(void*data, char*tag, FILE *tcase)
 		fakeston_evdev_dev_load_desc(&d[doff], fil);
 
 		fclose(fil);
+
+		d[doff].emu_desc_id = orig_fd;
+/*
+
+*/
 
 	} else if (0 == strcmp(tag, "EnewBURST:")) {
 		size_t i;
@@ -592,6 +663,52 @@ void fakeston_line_handler(void*data, char*tag, FILE *tcase)
 	}
 }
 
+void fakeston_api_handler(void**dst, int call, void *data)
+{
+	struct fakeston_evdev_rev *r = (struct fakeston_evdev_rev *) fixed_p->r;
+	struct fakeston_evdev_rev *z = (struct fakeston_evdev_rev *) fixed_p->z;
+	struct fakeston_evdev_dev *d = (struct fakeston_evdev_dev *) fixed_p->d;
+	struct fakeston_evdev_seat *s = (struct fakeston_evdev_seat *) fixed_p->s;
+	size_t ritem_s = sizeof(struct fakeston_evdev_rev);
+	size_t roff, doff, zoff, soff;
+
+	if (fixed_p == NULL)
+		return;
+
+	if (call == 5) {
+		zoff = hash_seek((void*)z, fixed_p->shtsz, ritem_s, data, data);
+		if (zoff == fixed_p->shtsz) {
+		fprintf(stderr, "SOM TU a ?? %p ... %p\n", data, *dst);
+			return;
+		}
+		soff = z[zoff].off;
+		*dst = (void*) s[soff].id;
+
+		fprintf(stderr, "SOM TU a hladam %p ... %p\n", data, *dst);
+		exit(0);
+
+	}
+
+	roff = hash_seek((void*)r, fixed_p->dhtsz, ritem_s, data, data);
+	if (roff == fixed_p->dhtsz)
+		return;
+	doff = r[roff].off;
+
+	if (d[doff].id == 0)
+		return;
+
+	if (call == 3)
+		*dst = (void*) (intptr_t) d[doff].emu_file_id;
+	if (call == 2)
+		*dst = (void*) d[doff].id;
+	if (call == 1)
+		*dst = (void*)(intptr_t)  d[doff].emu_desc_id;
+	if (call == 4) {
+		*dst = (void*) d[doff].seatid;
+
+	}
+}
+
 void fakeston_parse(FILE *tcase, fakestonph_f dispatch, void*data)
 {
 	char buf[13] = {0};
@@ -637,9 +754,9 @@ int ioctl (int __fd, unsigned long int __request, ...) {
 	char* dst = va_arg(argp, void*);
 
 	if ((fixed_p != NULL) && (__fd > 1337)) {
-		struct fakeston_evdev_rdev *r = (struct fakeston_evdev_rdev *) fixed_p->r;
+		struct fakeston_evdev_rev *r = (struct fakeston_evdev_rev *) fixed_p->r;
 		struct fakeston_evdev_dev *d = (struct fakeston_evdev_dev *) fixed_p->d;
-		size_t ritem_s = sizeof(struct fakeston_evdev_rdev);
+		size_t ritem_s = sizeof(struct fakeston_evdev_rev);
 		void *seek = (void *)(intptr_t)__fd;
 		
 		size_t roff = hash_seek((void*)r, fixed_p->dhtsz, ritem_s, seek, seek);

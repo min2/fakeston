@@ -48,22 +48,28 @@ void
 notify_button(struct weston_seat *seat, uint32_t time, int32_t button,
 	      enum wl_pointer_button_state state)
 {
+/*
 	fprintf(stdout, "notify_button\t%p\t%11u %11i %11u\n",
 		seat, time, button, state);
+*/
 }
 
 void
 notify_axis(struct weston_seat *seat, uint32_t time, uint32_t axis,
 	    wl_fixed_t value)
 {
+/*
 	fprintf(stdout, "notify_axis\t%p\t%11u %11u %11u\n",
 		seat, time, axis, value);
+*/
 }
 
 void
 notify_modifiers(struct weston_seat *seat, uint32_t serial)
 {
+/*
 	fprintf(stdout, "notify_modifiers\t%p\t%11u\n", seat, serial);
+*/
 }
 
 void
@@ -73,10 +79,10 @@ notify_motion(struct weston_seat *seat,
 /*
 	verbose
 */
-
+/*
 	fprintf(stdout, "notify_motion\t%p\t%11u %11i %11i\n",
 		seat, time, dx, dy);
-
+*/
 }
 
 void
@@ -86,9 +92,10 @@ notify_motion_absolute(struct weston_seat *seat, uint32_t time,
 /*
 	verbose
 */
-
+/*
 	fprintf(stdout, "notify_motion_absolute\t%p\t%11u %11i %11i\n",
 		seat, time, x, y);
+*/
 }
 
 void
@@ -96,8 +103,10 @@ notify_key(struct weston_seat *seat, uint32_t time, uint32_t key,
 	   enum wl_keyboard_key_state state,
 	   enum weston_key_state_update update_state)
 {
+/*
 	fprintf(stdout, "notify_key\t%p\t%11u %11u %11u %11u\n",
 		seat, time, key, state, update_state);
+*/
 }
 
 void
@@ -105,11 +114,10 @@ notify_touch(struct weston_seat *seat, uint32_t time, int touch_id,
              wl_fixed_t x, wl_fixed_t y, int touch_type)
 {
 	/* verbose */
-
-
+/*
 	fprintf(stdout, "notify_touch\t%p\t%11u %11i %11u %11u %11i\n",
 		seat, time, touch_id, x, y, touch_type);
-
+*/
 }
 
 void
@@ -223,17 +231,19 @@ int main(int argc, char**argv)
 		return -3;
 	}
 
-	const size_t shtsz = 16;/* how many seats in hashtable */
+	const size_t shtsz = 8;/* how many seats in hashtable */
 	const size_t dhtsz = 128;/* how many devices in hashtable */
 
 	struct weston_mode mode;
 	mode.width = 1024;
 	mode.height = 768;
 	struct weston_output output;
+	struct fakeston_evdev_rev reverseseats_htable[shtsz];
 	struct fakeston_evdev_seat seats_htable[shtsz];
 	struct fakeston_evdev_dev devices_htable[dhtsz];
-	struct fakeston_evdev_rdev reversedev_htable[dhtsz];
+	struct fakeston_evdev_rev reversedev_htable[dhtsz];
 	struct pload p;
+	memset(reverseseats_htable, 0, sizeof(reverseseats_htable));
 	memset(seats_htable, 0, sizeof(seats_htable));
 	memset(devices_htable, 0, sizeof(devices_htable));
 	memset(reversedev_htable, 0, sizeof(reversedev_htable));
@@ -242,6 +252,7 @@ int main(int argc, char**argv)
 	p.d = devices_htable;
 	p.s = seats_htable;
 	p.r = reversedev_htable;
+	p.z = reverseseats_htable;
 	p.seq = 0;
 	p.fd_seq = 1338;
 	p.subfolder = strdup(argv[1]);
@@ -249,6 +260,7 @@ int main(int argc, char**argv)
 	p.comp.focus = 1;
 	p.output = &output;
 	output.current = &mode;
+	p.comp.config = (void *) fakeston_api_handler;
 
 	wl_list_init(&p.devices_list);
 
@@ -265,11 +277,22 @@ int main(int argc, char**argv)
 
 	fclose(tcase);
 
-	struct evdev_device *device;
+	struct evdev_device *device, *previous = NULL;
 	wl_list_for_each(device, &p.devices_list, link) {
-		evdev_device_destroy(device);
+		if (previous) {
+			fixed_p = &p;
+			evdev_device_destroy(previous);
+			fixed_p = NULL;
+		}
+		previous = device;
+	}
+	if (previous) {
+		fixed_p = &p;
+		evdev_device_destroy(previous);
+		fixed_p = NULL;
 	}
 
 	free(p.subfolder);
+
 	return 0;
 }

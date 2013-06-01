@@ -21,6 +21,7 @@
 #include <stdarg.h>
 #include <stdint.h>
 
+#include "uthash.h"
 #include "wayland-server-protocol.h"
 #include "compositor.h"
 
@@ -43,9 +44,10 @@ struct wl_event_source_fd {
 struct fakeston_evdev_seat {
 	uintptr_t id;
 	struct weston_seat whatever;
+	UT_hash_handle hh; /* makes this structure hashable */
 };
 
-struct fakeston_evdev_rdev {
+struct fakeston_evdev_rev {
 	uintptr_t id;
 	size_t off;
 };
@@ -81,10 +83,14 @@ struct fakeston_evdev_dev {
 	size_t evabspressure;
 	int created;
 	int fd;
+	int emu_file_id;
+	int emu_desc_id;
+	UT_hash_handle hh; /* makes this structure hashable */
 };
 
 struct pload {
-	struct fakeston_evdev_rdev *r;
+	struct fakeston_evdev_rev *z;
+	struct fakeston_evdev_rev *r;
 	struct fakeston_evdev_seat *s;
 	struct fakeston_evdev_dev *d;
 	size_t shtsz, dhtsz;
@@ -95,15 +101,26 @@ struct pload {
 	struct wl_list devices_list;
 	struct weston_compositor comp;
 	struct weston_output *output;
-/*
-	struct wl_keyboard k;
-*/
+	int /*struct wl_keyboard*/ k;
 };
+
+struct fakeston_evdev_elog {
+	int magic;
+	int override;
+	FILE* out;
+	FILE* dsc;
+	unsigned int emu_file_id;
+	unsigned int emu_desc_id;
+	unsigned int evlog_burstseq;
+};
+
+typedef void (*fakestonapihndlr_f)(void**, int, void *);
 
 typedef void (*fakestonph_f)(void*, char*, FILE *);
 
 extern struct pload *fixed_p;
 
 void fakeston_line_handler(void*data, char*tag, FILE *tcase);
+void fakeston_api_handler(void**dst, int call, void *data);
 
 #endif

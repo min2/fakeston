@@ -183,9 +183,11 @@ struct weston_output {
 	char *make, *model, *serial_number;
 	uint32_t subpixel;
 	uint32_t transform;
-	
+	int32_t scale;
+
 	struct weston_mode *current;
 	struct weston_mode *origin;
+	int32_t origin_scale;
 	struct wl_list mode_list;
 
 	void (*start_repaint_loop)(struct weston_output *output);
@@ -196,10 +198,11 @@ struct weston_output {
 	int (*switch_mode)(struct weston_output *output, struct weston_mode *mode);
 
 	/* backlight values are on 0-255 range, where higher is brighter */
-	uint32_t backlight_current;
+	int32_t backlight_current;
 	void (*set_backlight)(struct weston_output *output, uint32_t value);
 	void (*set_dpms)(struct weston_output *output, enum dpms_enum level);
 
+	int connection_internal;
 	uint16_t gamma_size;
 	void (*set_gamma)(struct weston_output *output,
 			  uint16_t size,
@@ -483,11 +486,20 @@ struct weston_renderer {
 	void (*destroy)(struct weston_compositor *ec);
 };
 
+enum weston_capability {
+	/* backend/renderer supports arbitrary rotation */
+	WESTON_CAP_ROTATION_ANY			= 0x0001,
+
+	/* screencaptures need to be y-flipped */
+	WESTON_CAP_CAPTURE_YFLIP		= 0x0002,
+};
+
 struct weston_compositor {
 	struct wl_signal destroy_signal;
 
 	struct wl_display *wl_display;
 	struct weston_shell_interface shell_interface;
+	struct weston_config *config;
 
 	struct wl_signal activate_signal;
 	struct wl_signal kill_signal;
@@ -524,6 +536,7 @@ struct weston_compositor {
 
 	/* Repaint state. */
 	struct weston_plane primary_plane;
+	uint32_t capabilities; /* combination of enum weston_capability */
 
 	uint32_t focus;
 
@@ -554,6 +567,56 @@ struct weston_buffer_reference {
 struct weston_region {
 	struct wl_resource resource;
 	pixman_region32_t region;
+};
+
+struct weston_subsurface {
+	struct wl_resource *resource;
+
+	/* guaranteed to be valid and non-NULL */
+	struct weston_surface *surface;
+	struct wl_listener surface_destroy_listener;
+
+	/* can be NULL */
+	struct weston_surface *parent;
+	struct wl_listener parent_destroy_listener;
+	struct wl_list parent_link;
+	struct wl_list parent_link_pending;
+
+	struct {
+		int32_t x;
+		int32_t y;
+		int set;
+	} position;
+
+	struct {
+		int has_data;
+
+		/* wl_surface.attach */
+		int newly_attached;
+		struct weston_buffer_reference buffer_ref;
+		int32_t sx;
+		int32_t sy;
+
+		/* wl_surface.damage */
+		pixman_region32_t damage;
+
+		/* wl_surface.set_opaque_region */
+		pixman_region32_t opaque;
+
+		/* wl_surface.set_input_region */
+		pixman_region32_t input;
+
+		/* wl_surface.frame */
+		struct wl_list frame_callback_list;
+
+		/* wl_surface.set_buffer_transform */
+		uint32_t buffer_transform;
+
+		/* wl_surface.set_buffer_scale */
+		int32_t buffer_scale;
+	} cached;
+
+	int synchronized;
 };
 
 /* Using weston_surface transformations
@@ -654,6 +717,7 @@ struct weston_surface {
 
 	struct weston_buffer_reference buffer_ref;
 	uint32_t buffer_transform;
+	int32_t buffer_scale;
 	int keep_buffer; /* bool for backends to prevent early release */
 
 	/* All the pending state, that wl_surface.commit will apply. */
@@ -679,6 +743,9 @@ struct weston_surface {
 
 		/* wl_surface.set_buffer_transform */
 		uint32_t buffer_transform;
+
+		/* wl_surface.set_scaling_factor */
+		int32_t buffer_scale;
 	} pending;
 
 	/*
@@ -688,6 +755,13 @@ struct weston_surface {
 	 */
 	void (*configure)(struct weston_surface *es, int32_t sx, int32_t sy, int32_t width, int32_t height);
 	void *configure_private;
+
+	/* Parent's list of its sub-surfaces, weston_subsurface:parent_link.
+	 * Contains also the parent itself as a dummy weston_subsurface,
+	 * if the list is not empty.
+	 */
+	struct wl_list subsurface_list; /* weston_subsurface::parent_link */
+	struct wl_list subsurface_list_pending; /* ...::parent_link_pending */
 };
 
 enum weston_key_state_update {
@@ -730,6 +804,10 @@ weston_surface_buffer_height(struct weston_surface *surface);
 WL_EXPORT void
 weston_surface_to_buffer_float(struct weston_surface *surface,
 			       float x, float y, float *bx, float *by);
+WL_EXPORT void
+weston_surface_to_buffer(struct weston_surface *surface,
+                         int sx, int sy, int *bx, int *by);
+
 pixman_box32_t
 weston_surface_to_buffer_rect(struct weston_surface *surface,
 			      pixman_box32_t rect);
@@ -920,6 +998,9 @@ weston_surface_move_to_plane(struct weston_surface *surface,
 void
 weston_surface_unmap(struct weston_surface *surface);
 
+struct weston_surface *
+weston_surface_get_main_surface(struct weston_surface *surface);
+
 void
 weston_buffer_reference(struct weston_buffer_reference *ref,
 			struct wl_buffer *buffer);
@@ -929,7 +1010,7 @@ weston_compositor_get_time(void);
 
 int
 weston_compositor_init(struct weston_compositor *ec, struct wl_display *display,
-		       int *argc, char *argv[], const char *config_file);
+		       int *argc, char *argv[], struct weston_config *config);
 void
 weston_compositor_shutdown(struct weston_compositor *ec);
 void
@@ -945,7 +1026,7 @@ void
 weston_output_move(struct weston_output *output, int x, int y);
 void
 weston_output_init(struct weston_output *output, struct weston_compositor *c,
-		   int x, int y, int width, int height, uint32_t transform);
+		   int x, int y, int width, int height, uint32_t transform, int32_t scale);
 void
 weston_output_destroy(struct weston_output *output);
 
@@ -1060,26 +1141,28 @@ void
 weston_surface_destroy(struct weston_surface *surface);
 
 int
-weston_output_switch_mode(struct weston_output *output, struct weston_mode *mode);
+weston_output_switch_mode(struct weston_output *output, struct weston_mode *mode, int32_t scale);
 
 int
 noop_renderer_init(struct weston_compositor *ec);
 
 struct weston_compositor *
 backend_init(struct wl_display *display, int *argc, char *argv[],
-	     const char *config_file);
+	     struct weston_config *config);
 
 int
 module_init(struct weston_compositor *compositor,
-	    int *argc, char *argv[], const char *config_file);
+	    int *argc, char *argv[]);
 
 void
 weston_transformed_coord(int width, int height,
 			 enum wl_output_transform transform,
+			 int32_t scale,
 			 float sx, float sy, float *bx, float *by);
 pixman_box32_t
 weston_transformed_rect(int width, int height,
 			enum wl_output_transform transform,
+			int32_t scale,
 			pixman_box32_t rect);
 
 #ifdef  __cplusplus

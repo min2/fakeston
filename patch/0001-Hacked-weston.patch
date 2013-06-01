@@ -1,4 +1,4 @@
-From d568d622da3f3e303d15eb0d4c765ceccc30db5c Mon Sep 17 00:00:00 2001
+From d1747336665e6999b1939bdfa2db2adb1d30a080 Mon Sep 17 00:00:00 2001
 From: Martin Minarik <minarik11@student.fiit.stuba.sk>
 Date: Fri, 17 May 2013 17:35:17 +0200
 Subject: [PATCH] Hacked weston
@@ -17,7 +17,9 @@ Applies to weston 7b9195f9d6
  src/evdev-touchpad.c |    1 +
  src/evdev.c          |  320 +++++++++++++++++++++++++++++++++++++++++++++++++-
  src/evdev.h          |   13 ++
- 3 files changed, 332 insertions(+), 2 deletions(-)
+ src/evemu-impl.h     |   36 ++++++
+ 4 files changed, 368 insertions(+), 2 deletions(-)
+ create mode 100644 src/evemu-impl.h
 
 diff --git a/src/evdev-touchpad.c b/src/evdev-touchpad.c
 index 4f9bb03..c889845 100644
@@ -32,7 +34,7 @@ index 4f9bb03..c889845 100644
  					    absinfo.minimum,
  					    absinfo.maximum);
 diff --git a/src/evdev.c b/src/evdev.c
-index d8dd6d1..ab0c121 100644
+index 9289b1c..da4a601 100644
 --- a/src/evdev.c
 +++ b/src/evdev.c
 @@ -26,7 +26,9 @@
@@ -512,6 +514,48 @@ index eb5c868..6273099 100644
 +void ioctl_dump_long(struct evdev_device *d, char *tag, unsigned long *map, size_t n);
 +
  #endif /* EVDEV_H */
+diff --git a/src/evemu-impl.h b/src/evemu-impl.h
+new file mode 100644
+index 0000000..ed4097b
+--- /dev/null
++++ b/src/evemu-impl.h
+@@ -0,0 +1,36 @@
++/*
++ * Copyright (C) 2010, 2011 Canonical Ltd.
++ * Copyright (C) 2010 Henrik Rydberg <rydberg@euromail.se>
++ *
++ * This program is free software: you can redistribute it and/or modify it
++ * under the terms of the GNU General Public License as published by the
++ * Free Software Foundation, either version 3 of the License, or (at your
++ * option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful, but
++ * WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program.  If not, see <http://www.gnu.org/licenses/>.
++ */
++#ifndef _EVEMU_IMPL_H
++#define _EVEMU_IMPL_H
++
++#include <linux/uinput.h>
++
++#define EVPLAY_NBITS	KEY_CNT
++#define EVPLAY_NBYTES	((EVPLAY_NBITS + 7) / 8)
++
++struct evemu_device {
++	unsigned int version;
++	char name[UINPUT_MAX_NAME_SIZE];
++	struct input_id id;
++	unsigned char prop[EVPLAY_NBYTES];
++	unsigned char mask[EV_CNT][EVPLAY_NBYTES];
++	int pbytes, mbytes[EV_CNT];
++	struct input_absinfo abs[ABS_CNT];
++};
++
++#endif
 -- 
 1.7.10.4
 
